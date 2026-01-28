@@ -13,7 +13,8 @@ const createBooking = async (req, res) => {
         const bookingData = req.body;
         // Validate required fields
         if (!bookingData.customerName || !bookingData.email || !bookingData.phone ||
-            !bookingData.pickupDate || !bookingData.returnDate || !bookingData.carType) {
+            !bookingData.pickupDate || !bookingData.returnDate || !bookingData.carType ||
+            !bookingData.pickupLocation) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
         // Add booking to storage

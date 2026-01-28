@@ -12,7 +12,8 @@ export const createBooking = async (req: Request, res: Response) => {
 
         // Validate required fields
         if (!bookingData.customerName || !bookingData.email || !bookingData.phone ||
-            !bookingData.pickupDate || !bookingData.returnDate || !bookingData.carType) {
+            !bookingData.pickupDate || !bookingData.returnDate || !bookingData.carType ||
+            !bookingData.pickupLocation) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
