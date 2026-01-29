@@ -1,4 +1,3 @@
-// src/server.ts
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -12,9 +11,13 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
-    origin: process.env.CLIENT_URL || 'https://visiononecarhireservicesfrontend.onrender.com',
-    credentials: true
+    origin: [
+        'https://visiononecarhireservicesfrontend.onrender.com',
+        'http://localhost:5173'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
