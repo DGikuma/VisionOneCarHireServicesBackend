@@ -11,13 +11,15 @@ const bookings = [];
 const createBooking = async (req, res) => {
     try {
         const bookingData = req.body;
-        // Validate required fields
-        if (!bookingData.customerName || !bookingData.email || !bookingData.phone ||
-            !bookingData.pickupDate || !bookingData.returnDate || !bookingData.carType ||
+        if (!bookingData.customerName ||
+            !bookingData.email ||
+            !bookingData.phone ||
+            !bookingData.pickupDate ||
+            !bookingData.returnDate ||
+            !bookingData.carType ||
             !bookingData.pickupLocation) {
             return res.status(400).json({ error: 'Missing required fields' });
         }
-        // Add booking to storage
         const bookingWithId = {
             ...bookingData,
             id: `BOOK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -25,12 +27,15 @@ const createBooking = async (req, res) => {
             status: 'confirmed'
         };
         bookings.push(bookingWithId);
-        // Send confirmation email with PDF
-        await sendConfirmationEmail(bookingWithId);
+        // ✅ RESPOND IMMEDIATELY
         res.status(201).json({
             message: 'Booking created successfully',
             booking: bookingWithId
         });
+        // 🔥 Run slow work AFTER response
+        sendConfirmationEmail(bookingWithId)
+            .then(() => console.log('Confirmation email sent'))
+            .catch(err => console.error('Email error:', err));
     }
     catch (error) {
         console.error('Booking creation error:', error);

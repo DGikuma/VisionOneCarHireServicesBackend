@@ -3,7 +3,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-// src/server.ts
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = __importDefault(require("dotenv"));
@@ -14,8 +13,11 @@ const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
 // Middleware
 app.use((0, cors_1.default)({
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
-    credentials: true
+    origin: [
+        'https://visiononecarhireservicesfrontend.onrender.com',
+        'http://localhost:5173'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
 }));
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
@@ -34,8 +36,8 @@ app.get('/api/health', (req, res) => {
     });
 });
 // API Routes
-app.use('/api', contact_1.default);
-app.use('/api', booking_1.default);
+app.use('/api/contact', contact_1.default);
+app.use('/api/booking', booking_1.default);
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error('Global error handler:', err);
