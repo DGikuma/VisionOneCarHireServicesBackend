@@ -1,8 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import contactRoutes from './routes/contact';
-import bookingRoutes from './routes/booking';
+import contactRoutes from './routes/contactRoutes';
+import bookingRoutes from './routes/bookingRoutes';
 
 dotenv.config();
 
