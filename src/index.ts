@@ -1,8 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import contactRoutes from './routes/contactRoutes';
-import bookingRoutes from './routes/bookingRoutes';
+import contactRoutes from './routes/contact';
+import bookingRoutes from './routes/booking';
 
 dotenv.config();
 
@@ -38,8 +38,8 @@ app.get('/api/health', (req, res) => {
 });
 
 // API Routes
-app.use('/api', contactRoutes);
-app.use('/api', bookingRoutes);
+app.use('/api/contact', contactRoutes);
+app.use('/api/booking', bookingRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
