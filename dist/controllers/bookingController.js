@@ -6,40 +6,85 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendBookingConfirmation = exports.createBooking = void 0;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const pdfkit_1 = __importDefault(require("pdfkit"));
-// In-memory storage for bookings (replace with database in production)
+// In-memory storage for bookings
 const bookings = [];
+// Email transporter setup
+const createTransporter = () => {
+    if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+        return nodemailer_1.default.createTransport({
+            host: process.env.EMAIL_HOST,
+            port: parseInt(process.env.EMAIL_PORT || '587'),
+            secure: process.env.EMAIL_SECURE === 'true',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS
+            },
+            connectionTimeout: 10000,
+            greetingTimeout: 10000,
+            socketTimeout: 10000
+        });
+    }
+    else {
+        console.log('📧 Using Ethereal test email service');
+        return nodemailer_1.default.createTransport({
+            host: 'smtp.ethereal.email',
+            port: 587,
+            auth: {
+                user: 'test@example.com',
+                pass: 'test123'
+            }
+        });
+    }
+};
 const createBooking = async (req, res) => {
     try {
         const bookingData = req.body;
-        if (!bookingData.customerName ||
-            !bookingData.email ||
-            !bookingData.phone ||
-            !bookingData.pickupDate ||
-            !bookingData.returnDate ||
-            !bookingData.carType ||
-            !bookingData.pickupLocation) {
-            return res.status(400).json({ error: 'Missing required fields' });
-        }
+        // Generate booking ID
+        const bookingId = `V1-${Date.now().toString().slice(-8)}`;
+        const status = 'confirmed';
+        // Create booking object with proper typing
         const bookingWithId = {
             ...bookingData,
-            id: `BOOK-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            id: bookingId,
             bookingDate: new Date().toISOString(),
-            status: 'confirmed'
+            status: status // This is now the correct type
         };
+        // Store booking
         bookings.push(bookingWithId);
+        console.log(`📝 New booking created: ${bookingId} for ${bookingData.customerName}`);
         // ✅ RESPOND IMMEDIATELY
         res.status(201).json({
+            success: true,
             message: 'Booking created successfully',
-            booking: bookingWithId
+            booking: {
+                id: bookingId,
+                customerName: bookingData.customerName,
+                email: bookingData.email,
+                pickupDate: bookingData.pickupDate,
+                carType: bookingData.carType,
+                status: status,
+                timestamp: new Date().toISOString()
+            }
         });
-        // 🔥 Run slow work AFTER response
-        sendConfirmationEmail(bookingWithId)
-            .then(() => console.log('Confirmation email sent'))
-            .catch(err => console.error('Email error:', err));
+        // 🔥 Run email sending in background AFTER response
+        setTimeout(async () => {
+            try {
+                await sendAdminNotification(bookingWithId);
+                await sendCustomerConfirmation(bookingWithId);
+                console.log(`✅ All emails sent for booking ${bookingId}`);
+            }
+            catch (emailError) {
+                console.error(`❌ Email sending failed for ${bookingId}:`, emailError);
+            }
+        }, 0);
     }
     catch (error) {
-        console.error('Booking creation error:', error);
-        res.status(500).json({ error: 'Failed to create booking' });
+        console.error('❌ Booking creation error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to create booking',
+            message: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
     }
 };
 exports.createBooking = createBooking;
@@ -48,33 +93,71 @@ const sendBookingConfirmation = async (req, res) => {
         const { bookingId } = req.body;
         const booking = bookings.find(b => b.id === bookingId);
         if (!booking) {
-            return res.status(404).json({ error: 'Booking not found' });
+            return res.status(404).json({
+                success: false,
+                error: 'Booking not found'
+            });
         }
-        await sendConfirmationEmail(booking);
-        res.json({ message: 'Confirmation email sent successfully' });
+        await sendCustomerConfirmation(booking);
+        res.json({
+            success: true,
+            message: 'Confirmation email sent successfully'
+        });
     }
     catch (error) {
         console.error('Email sending error:', error);
-        res.status(500).json({ error: 'Failed to send confirmation email' });
+        res.status(500).json({
+            success: false,
+            error: 'Failed to send confirmation email'
+        });
     }
 };
 exports.sendBookingConfirmation = sendBookingConfirmation;
-const sendConfirmationEmail = async (booking) => {
-    // Create PDF
-    const pdfBuffer = await generateBookingPDF(booking);
-    // Configure transporter (using Ethereal email for testing)
-    const transporter = nodemailer_1.default.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.ethereal.email',
-        port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'true',
-        auth: {
-            user: process.env.EMAIL_USER || 'test@ethereal.email',
-            pass: process.env.EMAIL_PASS || 'test123'
-        }
-    });
-    // Email options
+// Send email to admin
+const sendAdminNotification = async (booking) => {
+    const transporter = createTransporter();
     const mailOptions = {
-        from: `"Vision One Car Hire" <${process.env.EMAIL_FROM || 'bookings@visiononecarhire.com'}>`,
+        from: process.env.EMAIL_FROM || '"Vision One Car Hire" <bookings@visiononecarhire.com>',
+        to: process.env.ADMIN_EMAIL || 'admin@visiononecarhire.com',
+        subject: `New Car Booking: ${booking.carType} - ${booking.customerName}`,
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #2c3e50;">🚗 New Car Booking Request</h2>
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db;">
+                    <h3 style="margin-top: 0;">Customer Details</h3>
+                    <p><strong>Booking ID:</strong> ${booking.id}</p>
+                    <p><strong>Name:</strong> ${booking.customerName}</p>
+                    <p><strong>Email:</strong> ${booking.email}</p>
+                    <p><strong>Phone:</strong> ${booking.phone}</p>
+                </div>
+                
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #2ecc71;">
+                    <h3>Booking Details</h3>
+                    <p><strong>Car Type:</strong> ${booking.carType}</p>
+                    <p><strong>Pickup Date:</strong> ${new Date(booking.pickupDate).toLocaleDateString()}</p>
+                    <p><strong>Return Date:</strong> ${new Date(booking.returnDate).toLocaleDateString()}</p>
+                    <p><strong>Pickup Location:</strong> ${booking.pickupLocation}</p>
+                    <p><strong>Dropoff Location:</strong> ${booking.dropoffLocation}</p>
+                    ${booking.additionalInfo ? `<p><strong>Additional Info:</strong> ${booking.additionalInfo}</p>` : ''}
+                </div>
+                
+                <div style="margin-top: 30px; padding: 15px; background: #e8f4fc; border-radius: 8px;">
+                    <p style="margin: 0; color: #2c3e50;">
+                        <strong>📅 Booking Received:</strong> ${new Date(booking.bookingDate).toLocaleString()}
+                    </p>
+                </div>
+            </div>
+        `
+    };
+    await transporter.sendMail(mailOptions);
+    console.log(`📧 Admin notification sent for booking ${booking.id}`);
+};
+// Send confirmation email to customer with PDF
+const sendCustomerConfirmation = async (booking) => {
+    const transporter = createTransporter();
+    const pdfBuffer = await generateBookingPDF(booking);
+    const mailOptions = {
+        from: process.env.EMAIL_FROM || '"Vision One Car Hire" <bookings@visiononecarhire.com>',
         to: booking.email,
         subject: `Booking Confirmation: ${booking.id} - Vision One Car Hire`,
         html: generateEmailTemplate(booking),
@@ -86,9 +169,8 @@ const sendConfirmationEmail = async (booking) => {
             }
         ]
     };
-    // Send email
     const info = await transporter.sendMail(mailOptions);
-    console.log('Email sent:', info.messageId);
+    console.log(`✅ Confirmation email sent to ${booking.email}: ${info.messageId}`);
     return info;
 };
 const generateBookingPDF = (booking) => {

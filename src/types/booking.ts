@@ -5,10 +5,13 @@ export interface BookingData {
     phone: string;
     pickupDate: string;
     returnDate: string;
-    carType: 'economy' | 'compact' | 'mid-size' | 'suv' | 'luxury' | 'van';
-    pickupLocation?: string;
+    carType: string;
+    pickupLocation: string;
     dropoffLocation?: string;
     additionalInfo?: string;
     bookingDate?: string;
-    status?: string;
+    status?: 'pending' | 'confirmed' | 'cancelled';
 }
+
+// Optional: Create a type for the booking status
+export type BookingStatus = 'pending' | 'confirmed' | 'cancelled';

@@ -5,11 +5,12 @@ export interface BookingData {
     phone: string;
     pickupDate: string;
     returnDate: string;
-    carType: 'economy' | 'compact' | 'mid-size' | 'suv' | 'luxury' | 'van';
-    pickupLocation?: string;
+    carType: string;
+    pickupLocation: string;
     dropoffLocation?: string;
     additionalInfo?: string;
     bookingDate?: string;
-    status?: string;
+    status?: 'pending' | 'confirmed' | 'cancelled';
 }
+export type BookingStatus = 'pending' | 'confirmed' | 'cancelled';
 //# sourceMappingURL=booking.d.ts.map
