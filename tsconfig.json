@@ -12,6 +12,9 @@
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
         "resolveJsonModule": true,
+        "declaration": true,
+        "declarationMap": true,
+        "sourceMap": true,
         "baseUrl": ".",
         "paths": {
             "@/*": [
@@ -26,15 +29,7 @@
             "@types/*": [
                 "src/types/*"
             ]
-        },
-        "moduleResolution": "node",
-        "allowSyntheticDefaultImports": true,
-        "typeRoots": [
-            "./node_modules/@types"
-        ],
-        "types": [
-            "node"
-        ]
+        }
     },
     "include": [
         "src/**/*"
