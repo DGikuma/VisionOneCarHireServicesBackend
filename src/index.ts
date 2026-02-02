@@ -1,43 +1,38 @@
-import express from 'express';
+// src/index.ts
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import contactRoutes from './routes/contact';
 import bookingRoutes from './routes/bookings';
+import contactRoutes from './routes/contact';
+import nodemailer from 'nodemailer';
+
+const swaggerUi = require('swagger-ui-express');
+const swaggerJsdoc = require('swagger-jsdoc');
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const START_TIME = new Date();
 
 /* -----------------------------
-   CORS configuration
+   CORS Configuration
 --------------------------------*/
 const allowedOrigins = [
-    'https://visiononecarhireservicesfrontend.onrender.com',
-    'http://localhost:5173',
-    'http://localhost:3000'
+    process.env.CLIENT_URL_LOCAL || 'http://localhost:3000',
+    process.env.CLIENT_URL_PROD || 'https://visiononecarhireservicesfrontend.onrender.com',
+    `http://localhost:${PORT}`, // allow Swagger testing
 ];
 
-app.use(
-    cors({
-        origin: function (origin, callback) {
-            if (!origin) return callback(null, true);
+app.use(cors({
+    origin: (origin, callback) => {
+        if (!origin) return callback(null, true); // allow non-browser requests like Postman
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        console.warn('Blocked by CORS:', origin);
+        return callback(new Error('CORS not allowed'));
+    },
+    credentials: true,
+}));
 
-            if (!allowedOrigins.includes(origin)) {
-                console.warn('Blocked by CORS:', origin);
-                return callback(null, false);
-            }
-
-            return callback(null, true);
-        },
-        credentials: true,
-        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization']
-    })
-);
-
-// Handle preflight requests (safe for newer Express)
 app.options(/.*/, cors());
 
 /* -----------------------------
@@ -47,185 +42,87 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 /* -----------------------------
-   Request logging
+   Swagger setup
 --------------------------------*/
-app.use((req, res, next) => {
-    const start = Date.now();
+const swaggerOptions = {
+    definition: {
+        openapi: '3.0.0',
+        info: {
+            title: 'Vision One Car Hire API',
+            version: '1.0.0',
+            description: 'Backend API for Vision One Car Hire Services',
+        },
+        servers: [{ url: `http://localhost:${PORT}` }],
+    },
+    apis: ['./src/routes/*.ts'], // make sure your routes are here
+};
 
-    console.log(
-        `[${new Date().toISOString()}] ${req.method} ${req.url} - IP: ${req.ip}`
-    );
+const swaggerSpec = swaggerJsdoc(swaggerOptions);
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get('/', (req, res) => res.redirect('/api/docs'));
 
-    res.on('finish', () => {
-        const duration = Date.now() - start;
-
-        console.log(
-            `[${new Date().toISOString()}] ${req.method} ${req.url} - Status: ${res.statusCode} - ${duration}ms`
-        );
-    });
-
-    next();
+/* -----------------------------
+   Email transporter (Nodemailer)
+--------------------------------*/
+export const emailTransporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port: Number(process.env.EMAIL_PORT) || 465,
+    secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for 587
+    auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS, // Gmail App Password
+    },
 });
+
+/* -----------------------------
+   API Routes
+--------------------------------*/
+app.use('/api/bookings', bookingRoutes);
+app.use('/api/contact', contactRoutes);
 
 /* -----------------------------
    Health check
 --------------------------------*/
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (req: Request, res: Response) => {
     const uptime = process.uptime();
-    const memoryUsage = process.memoryUsage();
-
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
         uptime: `${Math.floor(uptime / 60)}m ${Math.floor(uptime % 60)}s`,
-        memory: {
-            rss: `${Math.round(memoryUsage.rss / 1024 / 1024)}MB`,
-            heapTotal: `${Math.round(memoryUsage.heapTotal / 1024 / 1024)}MB`,
-            heapUsed: `${Math.round(memoryUsage.heapUsed / 1024 / 1024)}MB`
-        },
         service: 'Vision One Car Hire API',
         version: '1.0.0',
-        serverStartTime: START_TIME.toISOString(),
-        environment: process.env.NODE_ENV || 'development'
     });
 });
 
 /* -----------------------------
-   Warm-up endpoint
+   Global Error Handler
 --------------------------------*/
-app.get('/api/warmup', (req, res) => {
-    console.log('Warm-up request received');
-
-    res.json({
-        status: 'warmed up',
-        timestamp: new Date().toISOString(),
-        message: 'Backend is now active and ready to handle requests'
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
+    console.error('💥 ERROR:', err.message, err.stack);
+    res.status(err.status || 500).json({
+        error: err.message || 'Internal server error',
+        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
     });
 });
 
 /* -----------------------------
-   Debug: list registered routes
-   (use only for testing)
---------------------------------*/
-app.get('/api/debug/routes', (req, res) => {
-    const routes: any[] = [];
-
-    const stack = (app as any)._router?.stack || [];
-
-    stack.forEach((layer: any) => {
-        if (layer.route && layer.route.path) {
-            routes.push({
-                path: layer.route.path,
-                methods: layer.route.methods
-            });
-        }
-    });
-
-    res.json(routes);
-});
-
-/* -----------------------------
-   Load API routes
---------------------------------*/
-console.log('📦 Loading routes...');
-
-app.use('/api/contact', contactRoutes);
-console.log('✅ Contact routes loaded at /api/contact');
-
-app.use('/api/bookings', bookingRoutes);
-console.log('✅ Booking routes loaded at /api/bookings');
-
-/* -----------------------------
-   Global error handler
---------------------------------*/
-app.use(
-    (
-        err: any,
-        req: express.Request,
-        res: express.Response,
-        next: express.NextFunction
-    ) => {
-        console.error(`[ERROR ${new Date().toISOString()}]`, {
-            message: err.message,
-            stack: err.stack,
-            url: req.url,
-            method: req.method,
-            body: req.body
-        });
-
-        const errorResponse: any = {
-            error: 'Internal server error',
-            requestId:
-                Date.now().toString(36) +
-                Math.random().toString(36).substr(2)
-        };
-
-        if (process.env.NODE_ENV === 'development') {
-            errorResponse.details = err.message;
-            errorResponse.stack = err.stack;
-        }
-
-        res.status(err.status || 500).json(errorResponse);
-    }
-);
-
-/* -----------------------------
-   404 handler (safe catch-all)
+   404 Handler
 --------------------------------*/
 app.use((req, res) => {
     res.status(404).json({
         error: 'Route not found',
         requestedUrl: req.originalUrl,
-        availableEndpoints: ['/api/health', '/api/bookings', '/api/contact']
+        availableEndpoints: ['/api/bookings', '/api/contact', '/api/docs', '/api/health'],
     });
 });
 
 /* -----------------------------
-   Start server
+   Start Server
 --------------------------------*/
-const server = app.listen(PORT, () => {
+app.listen(PORT, () => {
     console.log(`
-  🚀 Server successfully started
-  📍 Port: ${PORT}
-  ⏰ Time: ${new Date().toISOString()}
-  🌐 Environment: ${process.env.NODE_ENV || 'development'}
-  📧 Email Service: ${process.env.EMAIL_HOST ? 'Configured' : 'Test Mode'}
-  `);
+🚀 Server running on port ${PORT}
+Swagger UI: http://localhost:${PORT}/api/docs
+CORS allowed origins: ${allowedOrigins.join(', ')}
+`);
 });
-
-/* -----------------------------
-   Graceful shutdown
---------------------------------*/
-const shutdown = () => {
-    console.log('🛑 Received shutdown signal, closing server gracefully...');
-
-    server.close(() => {
-        console.log('✅ Server closed successfully');
-        process.exit(0);
-    });
-
-    setTimeout(() => {
-        console.error('❌ Could not close connections in time, forcing shutdown');
-        process.exit(1);
-    }, 10000);
-};
-
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
-
-/* -----------------------------
-   Process safety
---------------------------------*/
-process.on('uncaughtException', (error) => {
-    console.error('💥 Uncaught Exception:', error);
-
-    if (process.env.NODE_ENV !== 'production') {
-        process.exit(1);
-    }
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('⚠️ Unhandled Rejection at:', promise, 'reason:', reason);
-});
-
-export default app;

@@ -8,30 +8,22 @@ const bookings: BookingData[] = [];
 
 // Email transporter setup
 const createTransporter = () => {
-    if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-        return nodemailer.createTransport({
-            host: process.env.EMAIL_HOST,
-            port: parseInt(process.env.EMAIL_PORT || '587'),
-            secure: process.env.EMAIL_SECURE === 'true',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS
-            },
-            connectionTimeout: 10000,
-            greetingTimeout: 10000,
-            socketTimeout: 10000
-        });
-    } else {
-        console.log('📧 Using Ethereal test email service');
-        return nodemailer.createTransport({
-            host: 'smtp.gmail.com',
-            port: 587,
-            auth: {
-                user: 'denniskimani62@gmail.com',
-                pass: 'Gikuma@3'
-            }
-        });
+    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        throw new Error('Missing email configuration in environment variables');
     }
+
+    return nodemailer.createTransport({
+        host: process.env.EMAIL_HOST,
+        port: parseInt(process.env.EMAIL_PORT || '587'),
+        secure: process.env.EMAIL_SECURE === 'true',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+    });
 };
 
 export const createBooking = async (req: Request, res: Response) => {
@@ -122,8 +114,8 @@ const sendAdminNotification = async (booking: BookingData) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-        from: process.env.EMAIL_FROM || '"Vision One Car Hire" <denniskimani62@gmail.com>',
-        to: process.env.ADMIN_EMAIL || 'denniskimani62@gmail.com',
+        from: process.env.EMAIL_FROM || '"Vision One Car Hire" <info.bluevisionrealtors@gmail.com>',
+        to: process.env.ADMIN_EMAIL || 'info.bluevisionrealtors@gmail.com',
         subject: `New Car Booking: ${booking.carType} - ${booking.customerName}`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">

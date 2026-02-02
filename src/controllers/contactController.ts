@@ -51,19 +51,24 @@ const departmentConfig = {
 
 // Email transporter configuration
 const createTransporter = () => {
+    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        throw new Error('Missing email configuration in environment variables');
+    }
+
     return nodemailer.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
+        host: process.env.EMAIL_HOST,
         port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'false',
+        secure: process.env.EMAIL_SECURE === 'true',
         auth: {
-            user: process.env.EMAIL_USER || 'denniskimani62@gmail.com',
-            pass: process.env.EMAIL_PASS || 'Gikuma@3'
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
         },
-        tls: {
-            rejectUnauthorized: false
-        }
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
     });
 };
+
 
 // Helper functions
 const determinePriority = (subject: string, message: string, department: string): ContactData['priority'] => {
@@ -281,11 +286,11 @@ const sendInternalNotificationEmail = async (inquiry: ContactData) => {
         const department = departmentConfig[inquiry.department as keyof typeof departmentConfig];
 
         const mailOptions = {
-            from: `"Vision One Contact System" <${process.env.EMAIL_FROM || 'denniskimani62@gmail.com'}>`,
+            from: `"Vision One Contact System" <${process.env.EMAIL_FROM || 'info.bluevisionrealtors@gmail.com'}>`,
             to: department.email,
             subject: `🚨 New ${inquiry.priority.toUpperCase()} Inquiry: ${inquiry.subject}`,
             html: generateInternalNotificationTemplate(inquiry, department),
-            cc: process.env.EMAIL_ADMIN || 'denniskimani62@gmail.com'
+            cc: process.env.EMAIL_ADMIN || 'info.bluevisionrealtors@gmail.com'
         };
 
         const info = await transporter.sendMail(mailOptions);
