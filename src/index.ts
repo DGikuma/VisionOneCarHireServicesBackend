@@ -83,14 +83,30 @@ app.use('/api/contact', contactRoutes);
 /* -----------------------------
    Health check
 --------------------------------*/
+const safeDateTime = (value?: string | number | Date | null) => {
+    if (!value) return 'N/A';
+    const d = new Date(value);
+    return isNaN(d.getTime()) ? 'N/A' : d.toISOString();
+};
+
+const formatUptime = (seconds: number) => {
+    if (!Number.isFinite(seconds)) return 'N/A';
+
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+
+    return `${mins}m ${secs}s`;
+};
+
 app.get('/api/health', (req: Request, res: Response) => {
-    const uptime = process.uptime();
+    const uptimeSeconds = process.uptime();
+
     res.json({
         status: 'ok',
-        timestamp: new Date().toISOString(),
-        uptime: `${Math.floor(uptime / 60)}m ${Math.floor(uptime % 60)}s`,
+        timestamp: safeDateTime(new Date()),
+        uptime: formatUptime(uptimeSeconds),
         service: 'Vision One Car Hire API',
-        version: '1.0.0',
+        version: '1.0.0'
     });
 });
 

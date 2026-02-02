@@ -6,7 +6,24 @@ import { BookingData, BookingStatus } from '../types/booking';
 // In-memory storage for bookings
 const bookings: BookingData[] = [];
 
-// Email transporter setup
+/* -----------------------------
+   Safe Date Utilities
+--------------------------------*/
+const formatDate = (dateStr?: string | null, fallback = 'N/A') => {
+    if (!dateStr) return fallback;
+    const date = new Date(dateStr);
+    return isNaN(date.getTime()) ? fallback : date.toLocaleDateString();
+};
+
+const formatDateTime = (dateStr?: string | null, fallback = 'N/A') => {
+    if (!dateStr) return fallback;
+    const date = new Date(dateStr);
+    return isNaN(date.getTime()) ? fallback : date.toLocaleString();
+};
+
+/* -----------------------------
+   Nodemailer Transporter
+--------------------------------*/
 const createTransporter = () => {
     if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
         throw new Error('Missing email configuration in environment variables');
@@ -26,28 +43,37 @@ const createTransporter = () => {
     });
 };
 
+/* -----------------------------
+   Create Booking
+--------------------------------*/
 export const createBooking = async (req: Request, res: Response) => {
     try {
         const bookingData: BookingData = req.body;
+
+        // Validate essential fields
+        if (!bookingData.customerName || !bookingData.email || !bookingData.pickupDate || !bookingData.returnDate) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required booking fields: customerName, email, pickupDate, returnDate'
+            });
+        }
 
         // Generate booking ID
         const bookingId = `V1-${Date.now().toString().slice(-8)}`;
         const status: BookingStatus = 'confirmed';
 
-        // Create booking object with proper typing
         const bookingWithId: BookingData = {
             ...bookingData,
             id: bookingId,
             bookingDate: new Date().toISOString(),
-            status: status // This is now the correct type
+            status
         };
 
-        // Store booking
         bookings.push(bookingWithId);
 
         console.log(`📝 New booking created: ${bookingId} for ${bookingData.customerName}`);
 
-        // ✅ RESPOND IMMEDIATELY
+        // Respond immediately
         res.status(201).json({
             success: true,
             message: 'Booking created successfully',
@@ -55,14 +81,15 @@ export const createBooking = async (req: Request, res: Response) => {
                 id: bookingId,
                 customerName: bookingData.customerName,
                 email: bookingData.email,
-                pickupDate: bookingData.pickupDate,
+                pickupDate: formatDate(bookingData.pickupDate),
+                returnDate: formatDate(bookingData.returnDate),
                 carType: bookingData.carType,
-                status: status,
-                timestamp: new Date().toISOString()
+                status,
+                bookingDate: formatDateTime(bookingWithId.bookingDate)
             }
         });
 
-        // 🔥 Run email sending in background AFTER response
+        // Send emails in background
         setTimeout(async () => {
             try {
                 await sendAdminNotification(bookingWithId);
@@ -86,6 +113,14 @@ export const createBooking = async (req: Request, res: Response) => {
 export const sendBookingConfirmation = async (req: Request, res: Response) => {
     try {
         const { bookingId } = req.body;
+
+        if (!bookingId) {
+            return res.status(400).json({
+                success: false,
+                error: 'bookingId is required'
+            });
+        }
+
         const booking = bookings.find(b => b.id === bookingId);
 
         if (!booking) {
@@ -96,20 +131,25 @@ export const sendBookingConfirmation = async (req: Request, res: Response) => {
         }
 
         await sendCustomerConfirmation(booking);
+
         res.json({
             success: true,
             message: 'Confirmation email sent successfully'
         });
+
     } catch (error) {
-        console.error('Email sending error:', error);
+        console.error('❌ Resend confirmation error:', error);
+
         res.status(500).json({
             success: false,
-            error: 'Failed to send confirmation email'
+            error: 'Failed to resend confirmation email'
         });
     }
 };
 
-// Send email to admin
+/* -----------------------------
+   Email Helpers
+--------------------------------*/
 const sendAdminNotification = async (booking: BookingData) => {
     const transporter = createTransporter();
 
@@ -119,30 +159,19 @@ const sendAdminNotification = async (booking: BookingData) => {
         subject: `New Car Booking: ${booking.carType} - ${booking.customerName}`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #2c3e50;">🚗 New Car Booking Request</h2>
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db;">
-                    <h3 style="margin-top: 0;">Customer Details</h3>
-                    <p><strong>Booking ID:</strong> ${booking.id}</p>
-                    <p><strong>Name:</strong> ${booking.customerName}</p>
-                    <p><strong>Email:</strong> ${booking.email}</p>
-                    <p><strong>Phone:</strong> ${booking.phone}</p>
+                <h2>🚗 New Car Booking Request</h2>
+                <div>
+                    <strong>Booking ID:</strong> ${booking.id}<br/>
+                    <strong>Name:</strong> ${booking.customerName}<br/>
+                    <strong>Email:</strong> ${booking.email}<br/>
+                    <strong>Phone:</strong> ${booking.phone || 'N/A'}<br/>
+                    <strong>Pickup Date:</strong> ${formatDate(booking.pickupDate)}<br/>
+                    <strong>Return Date:</strong> ${formatDate(booking.returnDate)}<br/>
+                    <strong>Pickup Location:</strong> ${booking.pickupLocation || 'Main Office'}<br/>
+                    <strong>Dropoff Location:</strong> ${booking.dropoffLocation || 'N/A'}<br/>
+                    ${booking.additionalInfo ? `<strong>Additional Info:</strong> ${booking.additionalInfo}` : ''}
                 </div>
-                
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #2ecc71;">
-                    <h3>Booking Details</h3>
-                    <p><strong>Car Type:</strong> ${booking.carType}</p>
-                    <p><strong>Pickup Date:</strong> ${new Date(booking.pickupDate).toLocaleDateString()}</p>
-                    <p><strong>Return Date:</strong> ${new Date(booking.returnDate).toLocaleDateString()}</p>
-                    <p><strong>Pickup Location:</strong> ${booking.pickupLocation}</p>
-                    <p><strong>Dropoff Location:</strong> ${booking.dropoffLocation}</p>
-                    ${booking.additionalInfo ? `<p><strong>Additional Info:</strong> ${booking.additionalInfo}</p>` : ''}
-                </div>
-                
-                <div style="margin-top: 30px; padding: 15px; background: #e8f4fc; border-radius: 8px;">
-                    <p style="margin: 0; color: #2c3e50;">
-                        <strong>📅 Booking Received:</strong> ${new Date(booking.bookingDate!).toLocaleString()}
-                    </p>
-                </div>
+                <p>📅 Booking Received: ${formatDateTime(booking.bookingDate)}</p>
             </div>
         `
     };
@@ -151,7 +180,6 @@ const sendAdminNotification = async (booking: BookingData) => {
     console.log(`📧 Admin notification sent for booking ${booking.id}`);
 };
 
-// Send confirmation email to customer with PDF
 const sendCustomerConfirmation = async (booking: BookingData) => {
     const transporter = createTransporter();
     const pdfBuffer = await generateBookingPDF(booking);
@@ -175,44 +203,39 @@ const sendCustomerConfirmation = async (booking: BookingData) => {
     return info;
 };
 
+/* -----------------------------
+   PDF Generation
+--------------------------------*/
 const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
     return new Promise((resolve) => {
         const doc = new PDFDocument({ margin: 50 });
         const buffers: Buffer[] = [];
 
         doc.on('data', buffers.push.bind(buffers));
-        doc.on('end', () => {
-            const pdfData = Buffer.concat(buffers);
-            resolve(pdfData);
-        });
+        doc.on('end', () => resolve(Buffer.concat(buffers)));
 
-        // PDF Content
         doc.fontSize(25).text('Vision One Car Hire', { align: 'center' });
         doc.moveDown();
         doc.fontSize(20).text('Booking Confirmation', { align: 'center' });
         doc.moveDown();
 
         doc.fontSize(12).text(`Booking ID: ${booking.id}`);
-        doc.text(`Date: ${new Date(booking.bookingDate!).toLocaleDateString()}`);
+        doc.text(`Date: ${formatDateTime(booking.bookingDate)}`);
         doc.moveDown();
 
         doc.fontSize(16).text('Customer Information:');
         doc.fontSize(12).text(`Name: ${booking.customerName}`);
         doc.text(`Email: ${booking.email}`);
-        doc.text(`Phone: ${booking.phone}`);
-        if (booking.additionalInfo) {
-            doc.text(`Additional Info: ${booking.additionalInfo}`);
-        }
+        doc.text(`Phone: ${booking.phone || 'N/A'}`);
+        if (booking.additionalInfo) doc.text(`Additional Info: ${booking.additionalInfo}`);
         doc.moveDown();
 
         doc.fontSize(16).text('Booking Details:');
         doc.fontSize(12).text(`Car Type: ${booking.carType}`);
-        doc.text(`Pickup Date: ${new Date(booking.pickupDate).toLocaleDateString()}`);
-        doc.text(`Return Date: ${new Date(booking.returnDate).toLocaleDateString()}`);
+        doc.text(`Pickup Date: ${formatDate(booking.pickupDate)}`);
+        doc.text(`Return Date: ${formatDate(booking.returnDate)}`);
         doc.text(`Pickup Location: ${booking.pickupLocation || 'Main Office'}`);
-        if (booking.dropoffLocation) {
-            doc.text(`Drop-off Location: ${booking.dropoffLocation}`);
-        }
+        if (booking.dropoffLocation) doc.text(`Drop-off Location: ${booking.dropoffLocation}`);
         doc.moveDown();
 
         doc.fontSize(14).text('Terms & Conditions:', { underline: true });
@@ -229,6 +252,9 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
     });
 };
 
+/* -----------------------------
+   Email Template
+--------------------------------*/
 const generateEmailTemplate = (booking: BookingData): string => {
     return `
     <!DOCTYPE html>
@@ -250,20 +276,14 @@ const generateEmailTemplate = (booking: BookingData): string => {
       <div class="content">
         <p>Dear ${booking.customerName},</p>
         <p>Thank you for booking with Vision One Car Hire! Your reservation has been confirmed.</p>
-        
         <div class="booking-details">
-          <h3>Booking Details:</h3>
           <p><strong>Booking ID:</strong> ${booking.id}</p>
           <p><strong>Car Type:</strong> ${booking.carType}</p>
-          <p><strong>Pickup Date:</strong> ${new Date(booking.pickupDate).toLocaleDateString()}</p>
-          <p><strong>Return Date:</strong> ${new Date(booking.returnDate).toLocaleDateString()}</p>
+          <p><strong>Pickup Date:</strong> ${formatDate(booking.pickupDate)}</p>
+          <p><strong>Return Date:</strong> ${formatDate(booking.returnDate)}</p>
           <p><strong>Pickup Location:</strong> ${booking.pickupLocation || 'Main Office'}</p>
         </div>
-        
-        <p>Your booking confirmation PDF is attached to this email. Please bring this document and your driver's license when picking up your vehicle.</p>
-        
-        <p>If you need to make any changes to your booking, please contact us at least 24 hours before your pickup time.</p>
-        
+        <p>Your booking confirmation PDF is attached. Please bring it and your driver's license when picking up your vehicle.</p>
         <p>Safe travels,<br>The Vision One Car Hire Team</p>
       </div>
       <div class="footer">
@@ -273,5 +293,5 @@ const generateEmailTemplate = (booking: BookingData): string => {
       </div>
     </body>
     </html>
-  `;
+    `;
 };
