@@ -52,12 +52,12 @@ const departmentConfig = {
 // Email transporter configuration
 const createTransporter = () => {
     return nodemailer.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.ethereal.email',
+        host: process.env.EMAIL_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'true',
+        secure: process.env.EMAIL_SECURE === 'false',
         auth: {
-            user: process.env.EMAIL_USER || 'test@ethereal.email',
-            pass: process.env.EMAIL_PASS || 'test123'
+            user: process.env.EMAIL_USER || 'denniskimani62@gmail.com',
+            pass: process.env.EMAIL_PASS || 'Gikuma@3'
         },
         tls: {
             rejectUnauthorized: false
@@ -281,11 +281,11 @@ const sendInternalNotificationEmail = async (inquiry: ContactData) => {
         const department = departmentConfig[inquiry.department as keyof typeof departmentConfig];
 
         const mailOptions = {
-            from: `"Vision One Contact System" <${process.env.EMAIL_FROM || 'noreply@visionone.com'}>`,
+            from: `"Vision One Contact System" <${process.env.EMAIL_FROM || 'denniskimani62@gmail.com'}>`,
             to: department.email,
             subject: `🚨 New ${inquiry.priority.toUpperCase()} Inquiry: ${inquiry.subject}`,
             html: generateInternalNotificationTemplate(inquiry, department),
-            cc: process.env.EMAIL_ADMIN || 'admin@visionone.com'
+            cc: process.env.EMAIL_ADMIN || 'denniskimani62@gmail.com'
         };
 
         const info = await transporter.sendMail(mailOptions);

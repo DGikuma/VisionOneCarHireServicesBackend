@@ -24,11 +24,11 @@ const createTransporter = () => {
     } else {
         console.log('📧 Using Ethereal test email service');
         return nodemailer.createTransport({
-            host: 'smtp.ethereal.email',
+            host: 'smtp.gmail.com',
             port: 587,
             auth: {
-                user: 'test@example.com',
-                pass: 'test123'
+                user: 'denniskimani62@gmail.com',
+                pass: 'Gikuma@3'
             }
         });
     }
@@ -122,8 +122,8 @@ const sendAdminNotification = async (booking: BookingData) => {
     const transporter = createTransporter();
 
     const mailOptions = {
-        from: process.env.EMAIL_FROM || '"Vision One Car Hire" <bookings@visiononecarhire.com>',
-        to: process.env.ADMIN_EMAIL || 'admin@visiononecarhire.com',
+        from: process.env.EMAIL_FROM || '"Vision One Car Hire" <denniskimani62@gmail.com>',
+        to: process.env.ADMIN_EMAIL || 'denniskimani62@gmail.com',
         subject: `New Car Booking: ${booking.carType} - ${booking.customerName}`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
