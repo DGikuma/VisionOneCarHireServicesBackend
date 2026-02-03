@@ -1,10 +1,11 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { createBooking, sendBookingConfirmation } from '../controllers/bookingController';
+import { upload } from '../middlewares/upload';
 
 const router = express.Router();
 
 /* -----------------------------
-   Custom validation middleware
+   Custom validation middleware (Updated)
 --------------------------------*/
 const validateBooking = (req: Request, res: Response, next: NextFunction) => {
     const {
@@ -15,7 +16,9 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
         returnDate,
         carType,
         pickupLocation,
-        dropoffLocation
+        idNumber,
+        idType,
+        termsAccepted
     } = req.body;
 
     const errors: { field: string; message: string }[] = [];
@@ -30,7 +33,9 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
     if (!returnDate || isNaN(Date.parse(returnDate))) errors.push({ field: 'returnDate', message: 'Valid return date is required' });
     if (!carType?.trim()) errors.push({ field: 'carType', message: 'Car type is required' });
     if (!pickupLocation?.trim()) errors.push({ field: 'pickupLocation', message: 'Pickup location is required' });
-    if (!dropoffLocation?.trim()) errors.push({ field: 'dropoffLocation', message: 'Dropoff location is required' });
+    if (!idNumber?.trim()) errors.push({ field: 'idNumber', message: 'ID/Passport number is required' });
+    if (!idType || !['id', 'passport'].includes(idType)) errors.push({ field: 'idType', message: 'Valid ID type is required (id or passport)' });
+    if (!termsAccepted || termsAccepted === 'false') errors.push({ field: 'termsAccepted', message: 'Terms and conditions must be accepted' });
 
     if (pickupDate && returnDate && Date.parse(returnDate) <= Date.parse(pickupDate)) {
         errors.push({ field: 'returnDate', message: 'Return date must be after pickup date' });
@@ -50,21 +55,25 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
     req.body.phone = phone.trim();
     req.body.carType = carType.trim();
     req.body.pickupLocation = pickupLocation.trim();
-    req.body.dropoffLocation = dropoffLocation.trim();
+    req.body.idNumber = idNumber.trim();
+    req.body.termsAccepted = termsAccepted === 'true' || termsAccepted === true;
+
+    // Handle dropoffLocation if provided
+    if (req.body.dropoffLocation) {
+        req.body.dropoffLocation = req.body.dropoffLocation.trim();
+    }
+
+    // Handle additionalInfo if provided
+    if (req.body.additionalInfo) {
+        req.body.additionalInfo = req.body.additionalInfo.trim();
+    }
 
     next();
 };
 
 /* -----------------------------
-   Swagger tags and schemas
+   Swagger update for new fields
 --------------------------------*/
-/**
- * @swagger
- * tags:
- *   name: Bookings
- *   description: Booking management endpoints
- */
-
 /**
  * @swagger
  * components:
@@ -79,7 +88,9 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
  *         - returnDate
  *         - carType
  *         - pickupLocation
- *         - dropoffLocation
+ *         - idNumber
+ *         - idType
+ *         - termsAccepted
  *       properties:
  *         customerName:
  *           type: string
@@ -100,30 +111,59 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
  *           type: string
  *         dropoffLocation:
  *           type: string
+ *         additionalInfo:
+ *           type: string
+ *         idNumber:
+ *           type: string
+ *           description: ID or Passport number
+ *         idType:
+ *           type: string
+ *           enum: [id, passport]
+ *           description: Type of identification
+ *         termsAccepted:
+ *           type: boolean
+ *           description: Must be true to proceed
+ *     FileUpload:
+ *       type: object
+ *       properties:
+ *         idDocument:
+ *           type: string
+ *           format: binary
+ *           description: ID card or passport image
+ *         drivingLicense:
+ *           type: string
+ *           format: binary
+ *           description: Driving license image
+ *         depositProof:
+ *           type: string
+ *           format: binary
+ *           description: Proof of deposit payment
  */
 
 /* -----------------------------
-   Routes
+   Routes (Updated with file upload)
 --------------------------------*/
 /**
  * @swagger
  * /api/bookings:
  *   post:
- *     summary: Submit a new booking
+ *     summary: Submit a new booking with documents
  *     tags: [Bookings]
  *     requestBody:
  *       required: true
  *       content:
- *         application/json:
+ *         multipart/form-data:
  *           schema:
- *             $ref: '#/components/schemas/Booking'
+ *             allOf:
+ *               - $ref: '#/components/schemas/Booking'
+ *               - $ref: '#/components/schemas/FileUpload'
  *     responses:
  *       201:
  *         description: Booking created successfully
  *       400:
  *         description: Validation failed
  */
-router.post('/', validateBooking, createBooking);
+router.post('/', upload, validateBooking, createBooking);
 
 /**
  * @swagger
@@ -149,47 +189,17 @@ router.post('/', validateBooking, createBooking);
  */
 router.post('/send-confirmation', sendBookingConfirmation);
 
-/**
- * @swagger
- * /api/bookings/health:
- *   get:
- *     summary: Check Booking API health
- *     tags: [Bookings]
- *     responses:
- *       200:
- *         description: API is healthy
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                 service:
- *                   type: string
- *                 timestamp:
- *                   type: string
- */
+// Keep existing health and info routes unchanged
 router.get('/health', (req: Request, res: Response) => {
     res.json({ status: 'healthy', service: 'Booking API', timestamp: new Date().toISOString() });
 });
 
-/**
- * @swagger
- * /api/bookings:
- *   get:
- *     summary: Get Booking API info
- *     tags: [Bookings]
- *     responses:
- *       200:
- *         description: API metadata
- */
 router.get('/', (req: Request, res: Response) => {
     res.json({
         message: 'Vision One Car Hire Booking API',
         version: '1.0.0',
         endpoints: [
-            { method: 'POST', path: '/api/bookings', description: 'Submit new booking' },
+            { method: 'POST', path: '/api/bookings', description: 'Submit new booking with documents' },
             { method: 'POST', path: '/api/bookings/send-confirmation', description: 'Resend confirmation email' },
             { method: 'GET', path: '/api/bookings/health', description: 'Check API health status' }
         ],

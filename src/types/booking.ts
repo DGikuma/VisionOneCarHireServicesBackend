@@ -11,7 +11,23 @@ export interface BookingData {
     additionalInfo?: string;
     bookingDate?: string;
     status?: 'pending' | 'confirmed' | 'cancelled';
+
+    // New fields
+    idNumber: string;
+    idType: 'id' | 'passport';
+    termsAccepted: boolean;
+
+    // File paths (will be stored on server)
+    idDocumentPath?: string;
+    drivingLicensePath?: string;
+    depositProofPath?: string;
 }
 
-// Optional: Create a type for the booking status
 export type BookingStatus = 'pending' | 'confirmed' | 'cancelled';
+
+// New interface for file uploads
+export interface UploadedFiles {
+    idDocument?: Express.Multer.File[];
+    drivingLicense?: Express.Multer.File[];
+    depositProof?: Express.Multer.File[];
+}

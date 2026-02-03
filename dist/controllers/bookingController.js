@@ -6,53 +6,144 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.sendBookingConfirmation = exports.createBooking = void 0;
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const pdfkit_1 = __importDefault(require("pdfkit"));
+const fs_1 = __importDefault(require("fs"));
+const path_1 = __importDefault(require("path"));
+const adm_zip_1 = __importDefault(require("adm-zip"));
 // In-memory storage for bookings
 const bookings = [];
-// Email transporter setup
+/* -----------------------------
+   Safe Date Utilities
+--------------------------------*/
+const formatDate = (dateStr, fallback = 'N/A') => {
+    if (!dateStr)
+        return fallback;
+    const date = new Date(dateStr);
+    return isNaN(date.getTime()) ? fallback : date.toLocaleDateString();
+};
+const formatDateTime = (dateStr, fallback = 'N/A') => {
+    if (!dateStr)
+        return fallback;
+    const date = new Date(dateStr);
+    return isNaN(date.getTime()) ? fallback : date.toLocaleString();
+};
+/* -----------------------------
+   Nodemailer Transporter
+--------------------------------*/
 const createTransporter = () => {
-    if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-        return nodemailer_1.default.createTransport({
-            host: process.env.EMAIL_HOST,
-            port: parseInt(process.env.EMAIL_PORT || '587'),
-            secure: process.env.EMAIL_SECURE === 'true',
-            auth: {
-                user: process.env.EMAIL_USER,
-                pass: process.env.EMAIL_PASS
-            },
-            connectionTimeout: 10000,
-            greetingTimeout: 10000,
-            socketTimeout: 10000
-        });
+    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        throw new Error('Missing email configuration in environment variables');
     }
-    else {
-        console.log('📧 Using Ethereal test email service');
-        return nodemailer_1.default.createTransport({
-            host: 'smtp.ethereal.email',
-            port: 587,
-            auth: {
-                user: 'test@example.com',
-                pass: 'test123'
-            }
+    return nodemailer_1.default.createTransport({
+        host: process.env.EMAIL_HOST,
+        port: parseInt(process.env.EMAIL_PORT || '587'),
+        secure: process.env.EMAIL_SECURE === 'true',
+        auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+    });
+};
+/* -----------------------------
+   Create ZIP of uploaded documents
+--------------------------------*/
+const createDocumentsZip = async (booking) => {
+    try {
+        const filesToZip = [];
+        if (booking.idDocumentPath && fs_1.default.existsSync(booking.idDocumentPath)) {
+            filesToZip.push(booking.idDocumentPath);
+        }
+        if (booking.drivingLicensePath && fs_1.default.existsSync(booking.drivingLicensePath)) {
+            filesToZip.push(booking.drivingLicensePath);
+        }
+        if (booking.depositProofPath && fs_1.default.existsSync(booking.depositProofPath)) {
+            filesToZip.push(booking.depositProofPath);
+        }
+        if (filesToZip.length === 0) {
+            console.log('No documents to zip');
+            return null;
+        }
+        const zip = new adm_zip_1.default();
+        const zipFileName = `${booking.idNumber}_documents.zip`;
+        const zipPath = path_1.default.join(__dirname, '../uploads', zipFileName);
+        // Add files to zip with proper names
+        filesToZip.forEach(filePath => {
+            const fileName = path_1.default.basename(filePath);
+            zip.addLocalFile(filePath, undefined, fileName);
         });
+        // Write zip file
+        zip.writeZip(zipPath);
+        console.log(`ZIP created: ${zipPath}`);
+        return zipPath;
+    }
+    catch (error) {
+        console.error('Error creating ZIP:', error);
+        return null;
     }
 };
+/* -----------------------------
+   Create Booking
+--------------------------------*/
 const createBooking = async (req, res) => {
     try {
-        const bookingData = req.body;
+        // Get files from multer
+        const files = req.files;
+        // Get form data
+        const bookingData = {
+            customerName: req.body.customerName,
+            email: req.body.email,
+            phone: req.body.phone,
+            pickupDate: req.body.pickupDate,
+            returnDate: req.body.returnDate,
+            carType: req.body.carType,
+            pickupLocation: req.body.pickupLocation,
+            dropoffLocation: req.body.dropoffLocation,
+            additionalInfo: req.body.additionalInfo,
+            idNumber: req.body.idNumber,
+            idType: req.body.idType,
+            termsAccepted: req.body.termsAccepted === 'true' || req.body.termsAccepted === true
+        };
+        // Validate essential fields
+        const requiredFields = [
+            'customerName', 'email', 'phone', 'pickupDate', 'returnDate',
+            'carType', 'pickupLocation', 'idNumber', 'idType'
+        ];
+        const missingFields = requiredFields.filter(field => !bookingData[field]);
+        if (missingFields.length > 0) {
+            return res.status(400).json({
+                success: false,
+                error: `Missing required fields: ${missingFields.join(', ')}`
+            });
+        }
+        if (!bookingData.termsAccepted) {
+            return res.status(400).json({
+                success: false,
+                error: 'Terms and conditions must be accepted'
+            });
+        }
         // Generate booking ID
         const bookingId = `V1-${Date.now().toString().slice(-8)}`;
         const status = 'confirmed';
-        // Create booking object with proper typing
+        // Store file paths
         const bookingWithId = {
             ...bookingData,
             id: bookingId,
             bookingDate: new Date().toISOString(),
-            status: status // This is now the correct type
+            status,
+            idDocumentPath: files.idDocument?.[0]?.path,
+            drivingLicensePath: files.drivingLicense?.[0]?.path,
+            depositProofPath: files.depositProof?.[0]?.path
         };
-        // Store booking
         bookings.push(bookingWithId);
         console.log(`📝 New booking created: ${bookingId} for ${bookingData.customerName}`);
-        // ✅ RESPOND IMMEDIATELY
+        console.log(`📁 Documents uploaded:`, {
+            idDocument: !!files.idDocument,
+            drivingLicense: !!files.drivingLicense,
+            depositProof: !!files.depositProof
+        });
+        // Respond immediately
         res.status(201).json({
             success: true,
             message: 'Booking created successfully',
@@ -60,18 +151,36 @@ const createBooking = async (req, res) => {
                 id: bookingId,
                 customerName: bookingData.customerName,
                 email: bookingData.email,
-                pickupDate: bookingData.pickupDate,
+                phone: bookingData.phone,
+                pickupDate: formatDate(bookingData.pickupDate),
+                returnDate: formatDate(bookingData.returnDate),
                 carType: bookingData.carType,
-                status: status,
-                timestamp: new Date().toISOString()
+                pickupLocation: bookingData.pickupLocation,
+                idNumber: bookingData.idNumber,
+                idType: bookingData.idType,
+                status,
+                bookingDate: formatDateTime(bookingWithId.bookingDate),
+                hasDocuments: {
+                    idDocument: !!files.idDocument,
+                    drivingLicense: !!files.drivingLicense,
+                    depositProof: !!files.depositProof
+                }
             }
         });
-        // 🔥 Run email sending in background AFTER response
+        // Send emails in background
         setTimeout(async () => {
             try {
-                await sendAdminNotification(bookingWithId);
-                await sendCustomerConfirmation(bookingWithId);
+                const zipPath = await createDocumentsZip(bookingWithId);
+                await sendAdminNotification(bookingWithId, zipPath);
+                await sendCustomerConfirmation(bookingWithId, zipPath);
                 console.log(`✅ All emails sent for booking ${bookingId}`);
+                // Clean up ZIP file after sending
+                if (zipPath && fs_1.default.existsSync(zipPath)) {
+                    setTimeout(() => {
+                        fs_1.default.unlinkSync(zipPath);
+                        console.log(`🗑️ Cleaned up ZIP file: ${zipPath}`);
+                    }, 5000);
+                }
             }
             catch (emailError) {
                 console.error(`❌ Email sending failed for ${bookingId}:`, emailError);
@@ -88,136 +197,157 @@ const createBooking = async (req, res) => {
     }
 };
 exports.createBooking = createBooking;
-const sendBookingConfirmation = async (req, res) => {
-    try {
-        const { bookingId } = req.body;
-        const booking = bookings.find(b => b.id === bookingId);
-        if (!booking) {
-            return res.status(404).json({
-                success: false,
-                error: 'Booking not found'
-            });
-        }
-        await sendCustomerConfirmation(booking);
-        res.json({
-            success: true,
-            message: 'Confirmation email sent successfully'
-        });
-    }
-    catch (error) {
-        console.error('Email sending error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to send confirmation email'
-        });
-    }
-};
-exports.sendBookingConfirmation = sendBookingConfirmation;
-// Send email to admin
-const sendAdminNotification = async (booking) => {
+/* -----------------------------
+   Email Helpers (Updated)
+--------------------------------*/
+const sendAdminNotification = async (booking, zipPath) => {
     const transporter = createTransporter();
+    const attachments = [];
+    if (zipPath && fs_1.default.existsSync(zipPath)) {
+        attachments.push({
+            filename: `${booking.idNumber}_documents.zip`,
+            path: zipPath,
+            contentType: 'application/zip'
+        });
+    }
     const mailOptions = {
-        from: process.env.EMAIL_FROM || '"Vision One Car Hire" <bookings@visiononecarhire.com>',
-        to: process.env.ADMIN_EMAIL || 'admin@visiononecarhire.com',
-        subject: `New Car Booking: ${booking.carType} - ${booking.customerName}`,
+        from: process.env.EMAIL_FROM || '"Vision One Car Hire" <info.bluevisionrealtors@gmail.com>',
+        to: process.env.ADMIN_EMAIL || 'info.bluevisionrealtors@gmail.com',
+        subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})`,
         html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #2c3e50;">🚗 New Car Booking Request</h2>
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #3498db;">
-                    <h3 style="margin-top: 0;">Customer Details</h3>
-                    <p><strong>Booking ID:</strong> ${booking.id}</p>
-                    <p><strong>Name:</strong> ${booking.customerName}</p>
-                    <p><strong>Email:</strong> ${booking.email}</p>
-                    <p><strong>Phone:</strong> ${booking.phone}</p>
+                <h2 style="color: #FF6B35;">🚗 NEW CAR BOOKING REQUEST</h2>
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                    <h3 style="color: #333; border-bottom: 2px solid #FF6B35; padding-bottom: 10px;">Booking Details</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Booking ID:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.id}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Customer:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.customerName}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>${booking.idType === 'passport' ? 'Passport No:' : 'ID Number:'}</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.idNumber}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Email:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.email}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Phone:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.phone || 'N/A'}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Vehicle:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.carType}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Pickup:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${formatDate(booking.pickupDate)} at ${booking.pickupLocation}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Return:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${formatDate(booking.returnDate)}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Deposit Proof:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.depositProofPath ? '✅ Uploaded' : '❌ Missing'}</td></tr>
+                        <tr><td style="padding: 8px;"><strong>Documents:</strong></td><td style="padding: 8px;">${attachments.length > 0 ? '✅ Attached as ZIP' : '❌ No documents'}</td></tr>
+                    </table>
                 </div>
                 
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px; border-left: 4px solid #2ecc71;">
-                    <h3>Booking Details</h3>
-                    <p><strong>Car Type:</strong> ${booking.carType}</p>
-                    <p><strong>Pickup Date:</strong> ${new Date(booking.pickupDate).toLocaleDateString()}</p>
-                    <p><strong>Return Date:</strong> ${new Date(booking.returnDate).toLocaleDateString()}</p>
-                    <p><strong>Pickup Location:</strong> ${booking.pickupLocation}</p>
-                    <p><strong>Dropoff Location:</strong> ${booking.dropoffLocation}</p>
-                    ${booking.additionalInfo ? `<p><strong>Additional Info:</strong> ${booking.additionalInfo}</p>` : ''}
+                ${booking.additionalInfo ? `
+                <div style="background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                    <strong>Special Requests:</strong><br/>
+                    ${booking.additionalInfo}
+                </div>
+                ` : ''}
+                
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee;">
+                    <p><strong>📅 Booking Received:</strong> ${formatDateTime(booking.bookingDate)}</p>
+                    <p><strong>🔒 Terms Accepted:</strong> ${booking.termsAccepted ? '✅ Yes' : '❌ No'}</p>
                 </div>
                 
-                <div style="margin-top: 30px; padding: 15px; background: #e8f4fc; border-radius: 8px;">
-                    <p style="margin: 0; color: #2c3e50;">
-                        <strong>📅 Booking Received:</strong> ${new Date(booking.bookingDate).toLocaleString()}
-                    </p>
+                <div style="background: #FF6B35; color: white; padding: 15px; border-radius: 5px; margin-top: 20px; text-align: center;">
+                    <p style="margin: 0; font-weight: bold;">ACTION REQUIRED: Process security deposit and verify documents</p>
                 </div>
             </div>
-        `
+        `,
+        attachments
     };
     await transporter.sendMail(mailOptions);
     console.log(`📧 Admin notification sent for booking ${booking.id}`);
 };
-// Send confirmation email to customer with PDF
-const sendCustomerConfirmation = async (booking) => {
+const sendCustomerConfirmation = async (booking, zipPath) => {
     const transporter = createTransporter();
     const pdfBuffer = await generateBookingPDF(booking);
+    const attachments = [
+        {
+            filename: `booking-confirmation-${booking.id}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+        }
+    ];
+    // Add documents ZIP if available
+    if (zipPath && fs_1.default.existsSync(zipPath)) {
+        attachments.push({
+            filename: `${booking.idNumber}_your_documents.zip`,
+            path: zipPath,
+            contentType: 'application/zip'
+        });
+    }
     const mailOptions = {
         from: process.env.EMAIL_FROM || '"Vision One Car Hire" <bookings@visiononecarhire.com>',
         to: booking.email,
-        subject: `Booking Confirmation: ${booking.id} - Vision One Car Hire`,
+        subject: `✅ Booking Confirmed: ${booking.id} - Vision One Car Hire`,
         html: generateEmailTemplate(booking),
-        attachments: [
-            {
-                filename: `booking-confirmation-${booking.id}.pdf`,
-                content: pdfBuffer,
-                contentType: 'application/pdf'
-            }
-        ]
+        attachments
     };
     const info = await transporter.sendMail(mailOptions);
     console.log(`✅ Confirmation email sent to ${booking.email}: ${info.messageId}`);
     return info;
 };
+/* -----------------------------
+   Enhanced PDF Generation
+--------------------------------*/
 const generateBookingPDF = (booking) => {
     return new Promise((resolve) => {
         const doc = new pdfkit_1.default({ margin: 50 });
         const buffers = [];
         doc.on('data', buffers.push.bind(buffers));
-        doc.on('end', () => {
-            const pdfData = Buffer.concat(buffers);
-            resolve(pdfData);
-        });
-        // PDF Content
-        doc.fontSize(25).text('Vision One Car Hire', { align: 'center' });
+        doc.on('end', () => resolve(Buffer.concat(buffers)));
+        // Header
+        doc.fillColor('#FF6B35').fontSize(25).text('Vision One Car Hire', { align: 'center' });
         doc.moveDown();
-        doc.fontSize(20).text('Booking Confirmation', { align: 'center' });
+        doc.fillColor('#333').fontSize(20).text('Booking Confirmation', { align: 'center' });
         doc.moveDown();
+        // Booking Info
         doc.fontSize(12).text(`Booking ID: ${booking.id}`);
-        doc.text(`Date: ${new Date(booking.bookingDate).toLocaleDateString()}`);
+        doc.text(`Date: ${formatDateTime(booking.bookingDate)}`);
         doc.moveDown();
+        // Customer Information
         doc.fontSize(16).text('Customer Information:');
         doc.fontSize(12).text(`Name: ${booking.customerName}`);
         doc.text(`Email: ${booking.email}`);
-        doc.text(`Phone: ${booking.phone}`);
-        if (booking.additionalInfo) {
+        doc.text(`Phone: ${booking.phone || 'N/A'}`);
+        doc.text(`${booking.idType === 'passport' ? 'Passport No' : 'ID Number'}: ${booking.idNumber}`);
+        if (booking.additionalInfo)
             doc.text(`Additional Info: ${booking.additionalInfo}`);
-        }
         doc.moveDown();
+        // Booking Details
         doc.fontSize(16).text('Booking Details:');
         doc.fontSize(12).text(`Car Type: ${booking.carType}`);
-        doc.text(`Pickup Date: ${new Date(booking.pickupDate).toLocaleDateString()}`);
-        doc.text(`Return Date: ${new Date(booking.returnDate).toLocaleDateString()}`);
+        doc.text(`Pickup Date: ${formatDate(booking.pickupDate)}`);
+        doc.text(`Return Date: ${formatDate(booking.returnDate)}`);
         doc.text(`Pickup Location: ${booking.pickupLocation || 'Main Office'}`);
-        if (booking.dropoffLocation) {
+        if (booking.dropoffLocation)
             doc.text(`Drop-off Location: ${booking.dropoffLocation}`);
-        }
         doc.moveDown();
+        // Security Deposit
+        doc.fontSize(16).text('Security Deposit Information:');
+        doc.fontSize(12).text(`Deposit Status: ${booking.depositProofPath ? 'Payment proof submitted' : 'Pending'}`);
+        doc.text(`Documents Status: All required documents ${booking.idDocumentPath && booking.drivingLicensePath ? 'submitted' : 'pending'}`);
+        doc.moveDown();
+        // Terms & Conditions
         doc.fontSize(14).text('Terms & Conditions:', { underline: true });
-        doc.fontSize(10).text('1. Customer must present valid driver\'s license and credit card at pickup.');
-        doc.text('2. Minimum rental age is 25 years.');
-        doc.text('3. Fuel policy: Return with same level as pickup.');
-        doc.text('4. Insurance included as per rental agreement.');
+        doc.fontSize(10).text('1. Customer must present valid driver\'s license and ID/passport at pickup.');
+        doc.text('2. Security deposit is required and will be refunded upon vehicle return.');
+        doc.text('3. Minimum rental age is 25 years.');
+        doc.text('4. Fuel policy: Return with same level as pickup.');
+        doc.text('5. Insurance included as per rental agreement.');
+        doc.text('6. All uploaded documents will be kept confidential.');
+        doc.moveDown();
+        // Important Notes
+        doc.fontSize(12).text('Important Notes:', { underline: true });
+        doc.fontSize(10).text('• Please bring your original ID/passport and driving license for verification.');
+        doc.text('• Your security deposit receipt must be presented at pickup.');
+        doc.text('• Keep all booking documents for your records.');
         doc.moveDown();
         doc.fontSize(12).text('Thank you for choosing Vision One Car Hire!', { align: 'center' });
         doc.text('For inquiries: vison1servicesltd@gmail.com', { align: 'center' });
         doc.end();
     });
 };
+/* -----------------------------
+   Enhanced Email Template
+--------------------------------*/
 const generateEmailTemplate = (booking) => {
     return `
     <!DOCTYPE html>
@@ -225,10 +355,15 @@ const generateEmailTemplate = (booking) => {
     <head>
       <style>
         body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .header { background: #1a365d; color: white; padding: 20px; text-align: center; }
+        .header { background: #FF6B35; color: white; padding: 20px; text-align: center; }
         .content { padding: 20px; }
-        .booking-details { background: #f7fafc; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .booking-details { background: #f7fafc; padding: 20px; border-radius: 5px; margin: 20px 0; }
+        .document-status { background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 20px 0; }
         .footer { background: #edf2f7; padding: 15px; text-align: center; font-size: 12px; }
+        table { width: 100%; border-collapse: collapse; }
+        td { padding: 10px; border-bottom: 1px solid #ddd; }
+        .status-ok { color: green; }
+        .status-pending { color: orange; }
       </style>
     </head>
     <body>
@@ -241,27 +376,89 @@ const generateEmailTemplate = (booking) => {
         <p>Thank you for booking with Vision One Car Hire! Your reservation has been confirmed.</p>
         
         <div class="booking-details">
-          <h3>Booking Details:</h3>
-          <p><strong>Booking ID:</strong> ${booking.id}</p>
-          <p><strong>Car Type:</strong> ${booking.carType}</p>
-          <p><strong>Pickup Date:</strong> ${new Date(booking.pickupDate).toLocaleDateString()}</p>
-          <p><strong>Return Date:</strong> ${new Date(booking.returnDate).toLocaleDateString()}</p>
-          <p><strong>Pickup Location:</strong> ${booking.pickupLocation || 'Main Office'}</p>
+          <h3>Booking Summary</h3>
+          <table>
+            <tr><td><strong>Booking ID:</strong></td><td>${booking.id}</td></tr>
+            <tr><td><strong>Car Type:</strong></td><td>${booking.carType}</td></tr>
+            <tr><td><strong>Pickup Date:</strong></td><td>${formatDate(booking.pickupDate)}</td></tr>
+            <tr><td><strong>Return Date:</strong></td><td>${formatDate(booking.returnDate)}</td></tr>
+            <tr><td><strong>Pickup Location:</strong></td><td>${booking.pickupLocation || 'Main Office'}</td></tr>
+            <tr><td><strong>${booking.idType === 'passport' ? 'Passport No:' : 'ID Number:'}</strong></td><td>${booking.idNumber}</td></tr>
+          </table>
         </div>
         
-        <p>Your booking confirmation PDF is attached to this email. Please bring this document and your driver's license when picking up your vehicle.</p>
+        <div class="document-status">
+          <h3>Document Status</h3>
+          <table>
+            <tr><td><strong>ID Document:</strong></td><td class="status-ok">✓ Uploaded</td></tr>
+            <tr><td><strong>Driving License:</strong></td><td class="status-ok">✓ Uploaded</td></tr>
+            <tr><td><strong>Deposit Proof:</strong></td><td>${booking.depositProofPath ? '<span class="status-ok">✓ Uploaded</span>' : '<span class="status-pending">⏳ Pending</span>'}</td></tr>
+          </table>
+        </div>
         
-        <p>If you need to make any changes to your booking, please contact us at least 24 hours before your pickup time.</p>
+        <div style="background: #fff8e1; padding: 15px; border-radius: 5px; margin: 20px 0;">
+          <h4>📋 What's Next:</h4>
+          <ol>
+            <li>Your booking confirmation PDF is attached.</li>
+            <li>All your uploaded documents are included in the ZIP file.</li>
+            <li>Please bring your original documents for verification at pickup.</li>
+            <li>Present your deposit proof receipt when collecting the vehicle.</li>
+          </ol>
+        </div>
+        
+        <p><strong>Deposit Information:</strong><br/>
+        Your security deposit has been recorded. Please bring the proof of payment when picking up the vehicle.</p>
         
         <p>Safe travels,<br>The Vision One Car Hire Team</p>
       </div>
       <div class="footer">
-        <p>Vision One Car Hire Services<br>
-        Phone: +44 (7397) 549 590 | Email: vison1servicesltd@gmail.com</p>
+        <p><strong>Vision One Car Hire Services</strong><br>
+        Kenya: +254 (705) 336 311 | UK: +44 (7397) 549 590<br>
+        Email: vison1servicesltd@gmail.com</p>
+        <p style="font-size: 11px; color: #666;">
+          This email contains confidential information. If you received this email in error, please delete it immediately.
+        </p>
         <p>© ${new Date().getFullYear()} Vision One Car Hire. All rights reserved.</p>
       </div>
     </body>
     </html>
-  `;
+    `;
 };
+// Keep existing sendBookingConfirmation function as is
+const sendBookingConfirmation = async (req, res) => {
+    try {
+        const { bookingId } = req.body;
+        if (!bookingId) {
+            return res.status(400).json({
+                success: false,
+                error: 'bookingId is required'
+            });
+        }
+        const booking = bookings.find(b => b.id === bookingId);
+        if (!booking) {
+            return res.status(404).json({
+                success: false,
+                error: 'Booking not found'
+            });
+        }
+        const zipPath = await createDocumentsZip(booking);
+        await sendCustomerConfirmation(booking, zipPath);
+        // Clean up
+        if (zipPath && fs_1.default.existsSync(zipPath)) {
+            fs_1.default.unlinkSync(zipPath);
+        }
+        res.json({
+            success: true,
+            message: 'Confirmation email sent successfully'
+        });
+    }
+    catch (error) {
+        console.error('❌ Resend confirmation error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to resend confirmation email'
+        });
+    }
+};
+exports.sendBookingConfirmation = sendBookingConfirmation;
 //# sourceMappingURL=bookingController.js.map

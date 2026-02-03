@@ -36,17 +36,20 @@ const departmentConfig = {
 };
 // Email transporter configuration
 const createTransporter = () => {
+    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        throw new Error('Missing email configuration in environment variables');
+    }
     return nodemailer_1.default.createTransport({
-        host: process.env.EMAIL_HOST || 'smtp.ethereal.email',
+        host: process.env.EMAIL_HOST,
         port: parseInt(process.env.EMAIL_PORT || '587'),
         secure: process.env.EMAIL_SECURE === 'true',
         auth: {
-            user: process.env.EMAIL_USER || 'test@ethereal.email',
-            pass: process.env.EMAIL_PASS || 'test123'
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
         },
-        tls: {
-            rejectUnauthorized: false
-        }
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
     });
 };
 // Helper functions
@@ -253,11 +256,11 @@ const sendInternalNotificationEmail = async (inquiry) => {
         const transporter = createTransporter();
         const department = departmentConfig[inquiry.department];
         const mailOptions = {
-            from: `"Vision One Contact System" <${process.env.EMAIL_FROM || 'noreply@visionone.com'}>`,
+            from: `"Vision One Contact System" <${process.env.EMAIL_FROM || 'info.bluevisionrealtors@gmail.com'}>`,
             to: department.email,
             subject: `🚨 New ${inquiry.priority.toUpperCase()} Inquiry: ${inquiry.subject}`,
             html: generateInternalNotificationTemplate(inquiry, department),
-            cc: process.env.EMAIL_ADMIN || 'admin@visionone.com'
+            cc: process.env.EMAIL_ADMIN || 'info.bluevisionrealtors@gmail.com'
         };
         const info = await transporter.sendMail(mailOptions);
         console.log(`Internal notification email sent: ${info.messageId}`);
