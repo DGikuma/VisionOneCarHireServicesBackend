@@ -6,6 +6,8 @@ import path from 'path';
 import AdmZip from 'adm-zip';
 import { BookingData } from '../types/booking';
 
+const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
+
 // In-memory storage for bookings
 const bookings: BookingData[] = [];
 
@@ -70,7 +72,7 @@ const createDocumentsZip = async (booking: BookingData): Promise<string | null> 
 
         const zip = new AdmZip();
         const zipFileName = `${booking.idNumber}_documents.zip`;
-        const zipPath = path.join(__dirname, '../uploads', zipFileName);
+        const zipPath = path.join(UPLOAD_DIR, zipFileName);
 
         // Add files to zip with proper names
         filesToZip.forEach(filePath => {
@@ -96,7 +98,7 @@ const createDocumentsZip = async (booking: BookingData): Promise<string | null> 
 export const createBooking = async (req: Request, res: Response) => {
     try {
         // Get files from multer
-        const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+        const files = (req.files as Express.Multer.File[]) || [];
 
         // Get form data
         const bookingData: BookingData = {
@@ -140,23 +142,27 @@ export const createBooking = async (req: Request, res: Response) => {
         const status = 'confirmed';
 
         // Store file paths
+        const findFile = (name: string) =>
+            files.find(f => f.fieldname === name)?.path;
+
         const bookingWithId: BookingData = {
             ...bookingData,
             id: bookingId,
             bookingDate: new Date().toISOString(),
             status,
-            idDocumentPath: files.idDocument?.[0]?.path,
-            drivingLicensePath: files.drivingLicense?.[0]?.path,
-            depositProofPath: files.depositProof?.[0]?.path
+            idDocumentPath: findFile('idDocument'),
+            drivingLicensePath: findFile('drivingLicense'),
+            depositProofPath: findFile('depositProof')
         };
+
 
         bookings.push(bookingWithId);
 
         console.log(`📝 New booking created: ${bookingId} for ${bookingData.customerName}`);
         console.log(`📁 Documents uploaded:`, {
-            idDocument: !!files.idDocument,
-            drivingLicense: !!files.drivingLicense,
-            depositProof: !!files.depositProof
+            idDocument: !!findFile('idDocument'),
+            drivingLicense: !!findFile('drivingLicense'),
+            depositProof: !!findFile('depositProof')
         });
 
         // Respond immediately
@@ -177,10 +183,11 @@ export const createBooking = async (req: Request, res: Response) => {
                 status,
                 bookingDate: formatDateTime(bookingWithId.bookingDate),
                 hasDocuments: {
-                    idDocument: !!files.idDocument,
-                    drivingLicense: !!files.drivingLicense,
-                    depositProof: !!files.depositProof
+                    idDocument: !!findFile('idDocument'),
+                    drivingLicense: !!findFile('drivingLicense'),
+                    depositProof: !!findFile('depositProof')
                 }
+
             }
         });
 
@@ -314,11 +321,12 @@ const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | 
    Enhanced PDF Generation
 --------------------------------*/
 const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         const doc = new PDFDocument({ margin: 50 });
         const buffers: Buffer[] = [];
 
         doc.on('data', buffers.push.bind(buffers));
+        doc.on('error', reject);
         doc.on('end', () => resolve(Buffer.concat(buffers)));
 
         // Header
@@ -425,8 +433,22 @@ const generateEmailTemplate = (booking: BookingData): string => {
         <div class="document-status">
           <h3>Document Status</h3>
           <table>
-            <tr><td><strong>ID Document:</strong></td><td class="status-ok">✓ Uploaded</td></tr>
-            <tr><td><strong>Driving License:</strong></td><td class="status-ok">✓ Uploaded</td></tr>
+            <tr>
+            <td><strong>ID Document:</strong></td>
+            <td>
+                ${booking.idDocumentPath
+            ? '<span class="status-ok">✓ Uploaded</span>'
+            : '<span class="status-pending">⏳ Pending</span>'}
+            </td>
+            </tr>
+            <tr>
+            <td><strong>Driving License:</strong></td>
+            <td>
+                ${booking.drivingLicensePath
+            ? '<span class="status-ok">✓ Uploaded</span>'
+            : '<span class="status-pending">⏳ Pending</span>'}
+            </td>
+            </tr>
             <tr><td><strong>Deposit Proof:</strong></td><td>${booking.depositProofPath ? '<span class="status-ok">✓ Uploaded</span>' : '<span class="status-pending">⏳ Pending</span>'}</td></tr>
           </table>
         </div>

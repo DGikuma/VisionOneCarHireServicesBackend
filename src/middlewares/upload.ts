@@ -45,16 +45,12 @@ const limits = {
     fileSize: 10 * 1024 * 1024, // 10MB max file size
 };
 
-// Create upload middleware
+// Create upload middleware (files are OPTIONAL)
 export const upload = multer({
     storage,
     fileFilter,
     limits
-}).fields([
-    { name: 'idDocument', maxCount: 1 },
-    { name: 'drivingLicense', maxCount: 1 },
-    { name: 'depositProof', maxCount: 1 }
-]);
+}).any();
 
 // Helper to get file paths
 export const getFilePaths = (files: any, idNumber: string) => {
