@@ -330,7 +330,7 @@ const sendAdminNotification = async (booking: BookingData, zipBuffer: Buffer | n
         }
 
         const adminEmail = process.env.ADMIN_EMAIL || 'info.bluevisionrealtors@gmail.com';
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <bookings@visionwanservices.com>';
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <onboarding@resend.dev>';
 
         const attachments = [];
         if (zipBuffer) {
@@ -366,7 +366,7 @@ const sendCustomerConfirmation = async (booking: BookingData, zipBuffer: Buffer 
             throw new Error('RESEND_API_KEY is not configured');
         }
 
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <bookings@visionwanservices.com>';
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <onboarding@resend.dev>';
         const pdfBuffer = await generateBookingPDF(booking);
 
         const attachments: any[] = [

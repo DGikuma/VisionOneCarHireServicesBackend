@@ -135,7 +135,7 @@ class EmailService {
         }
 
         return this.sendEmail({
-            from: process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <info.bluevisionrealtors@gmail.com>',
+            from: process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <onboarding@resend.dev>',
             to,
             subject: `✅ Booking Confirmed: ${booking.id} - Vision Wan Services`,
             html: this.generateBookingEmailTemplate(booking),
@@ -166,7 +166,7 @@ class EmailService {
         const adminEmail = process.env.ADMIN_EMAIL || 'info.bluevisionrealtors@gmail.com';
 
         return this.sendEmail({
-            from: process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <info.bluevisionrealtors@gmail.com>',
+            from: process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <onboarding@resend.dev>',
             to: adminEmail,
             subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})`,
             html: this.generateAdminNotificationTemplate(booking),
@@ -187,7 +187,7 @@ class EmailService {
         department: any
     ): Promise<EmailResponse> {
         return this.sendEmail({
-            from: process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <info.bluevisionrealtors@gmail.com>',
+            from: process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <onboarding@resend.dev>',
             to: inquiry.email,
             subject: `We've received your inquiry: ${inquiry.subject}`,
             html: this.generateContactAcknowledgementTemplate(inquiry, department),
@@ -210,7 +210,7 @@ class EmailService {
         const departmentEmail = department.email || adminEmail;
 
         return this.sendEmail({
-            from: process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <info.bluevisionrealtors@gmail.com>',
+            from: process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <onboarding@resend.dev>',
             to: departmentEmail,
             cc: adminEmail,
             subject: `🚨 New ${inquiry.priority.toUpperCase()} Inquiry: ${inquiry.subject}`,

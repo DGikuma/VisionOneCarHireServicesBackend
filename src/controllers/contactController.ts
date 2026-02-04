@@ -252,7 +252,7 @@ const sendAcknowledgementEmail = async (inquiry: ContactData) => {
         }
 
         const department = departmentConfig[inquiry.department as keyof typeof departmentConfig];
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <support@visionwanservices.com>';
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <onboarding@resend.dev>';
 
         const { data, error } = await resend.emails.send({
             from: fromEmail,
@@ -286,7 +286,7 @@ const sendInternalNotificationEmail = async (inquiry: ContactData) => {
         }
 
         const department = departmentConfig[inquiry.department as keyof typeof departmentConfig];
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <system@visionwanservices.com>';
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <onboarding@resend.dev>';
         const adminEmail = process.env.ADMIN_EMAIL || 'vision1servicesltd@gmail.com';
 
         // Get the department email, fallback to admin email

@@ -1,56 +1,37 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.contactController = exports.getInquiryStats = exports.updateInquiryStatus = exports.getContactInquiries = exports.createContactInquiry = void 0;
-const nodemailer_1 = __importDefault(require("nodemailer"));
+exports.contactController = exports.resendInquiryEmails = exports.getInquiryById = exports.getInquiryStats = exports.updateInquiryStatus = exports.getContactInquiries = exports.createContactInquiry = void 0;
+const resend_1 = require("resend");
 // In-memory storage for contact inquiries
 const contactInquiries = [];
+// Initialize Resend client
+const resend = new resend_1.Resend(process.env.RESEND_API_KEY);
 // Department configuration
 const departmentConfig = {
     general: {
         name: 'Executive Office',
-        email: process.env.DEPARTMENT_GENERAL_EMAIL || 'vison1servicesltd@gmail.com',
+        email: process.env.DEPARTMENT_GENERAL_EMAIL || 'vision1servicesltd@gmail.com',
         phone: '+254 (705) 336 311',
         priority: 'normal'
     },
     booking: {
         name: 'Premium Reservations',
-        email: process.env.DEPARTMENT_BOOKING_EMAIL || 'vison1servicesltd@gmail.com',
+        email: process.env.DEPARTMENT_BOOKING_EMAIL || 'vision1servicesltd@gmail.com',
         phone: '+254 (705) 336 311',
         priority: 'normal'
     },
     corporate: {
         name: 'Corporate Services',
-        email: process.env.DEPARTMENT_CORPORATE_EMAIL || 'vison1servicesltd@gmail.com',
+        email: process.env.DEPARTMENT_CORPORATE_EMAIL || 'vision1servicesltd@gmail.com',
         phone: '+254 (705) 336 311',
         priority: 'high'
     },
     support: {
         name: 'Premium Support',
-        email: process.env.DEPARTMENT_SUPPORT_EMAIL || 'vison1servicesltd@gmail.com',
+        email: process.env.DEPARTMENT_SUPPORT_EMAIL || 'vision1servicesltd@gmail.com',
         phone: '+254 (705) 336 311',
         priority: 'urgent'
     }
-};
-// Email transporter configuration
-const createTransporter = () => {
-    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        throw new Error('Missing email configuration in environment variables');
-    }
-    return nodemailer_1.default.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'true',
-        auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS
-        },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000
-    });
 };
 // Helper functions
 const determinePriority = (subject, message, department) => {
@@ -83,6 +64,10 @@ const getEstimatedResponseTime = (priority) => {
     };
     return responseTimes[priority];
 };
+const formatDateTime = (dateStr) => {
+    const date = new Date(dateStr);
+    return isNaN(date.getTime()) ? 'N/A' : date.toLocaleString();
+};
 // Email template generators
 const generateAcknowledgementTemplate = (inquiry, department) => {
     return `
@@ -91,7 +76,7 @@ const generateAcknowledgementTemplate = (inquiry, department) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Vision One - Inquiry Received</title>
+        <title>Vision Wan Services - Inquiry Received</title>
         <style>
             body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
             .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
@@ -110,14 +95,14 @@ const generateAcknowledgementTemplate = (inquiry, department) => {
     <body>
         <div class="container">
             <div class="header">
-                <h1>Vision One Executive Services</h1>
+                <h1>Vision Wan Services</h1>
                 <h2>Inquiry Received</h2>
             </div>
             
             <div class="content">
                 <p>Dear ${inquiry.name},</p>
                 
-                <p>Thank you for contacting Vision One Executive Services. Your inquiry has been received and is being processed by our ${department.name} team.</p>
+                <p>Thank you for contacting Vision Wan Services. Your inquiry has been received and is being processed by our ${department.name} team.</p>
                 
                 <div class="inquiry-details">
                     <h3 style="margin-top: 0; color: #1a365d;">Inquiry Details:</h3>
@@ -143,13 +128,13 @@ const generateAcknowledgementTemplate = (inquiry, department) => {
                     </ul>
                 </div>
                 
-                <p>Best regards,<br><strong>The Vision One Executive Team</strong></p>
+                <p>Best regards,<br><strong>The Vision Wan Services Team</strong></p>
             </div>
             
             <div class="footer">
-                <p>Vision One Car Hire Services Ltd<br>
+                <p>Vision Wan Services Ltd<br>
                 Executive Support: ${department.phone} | Email: ${department.email}</p>
-                <p>© ${new Date().getFullYear()} Vision One Car Hire. All rights reserved.</p>
+                <p>© ${new Date().getFullYear()} Vision Wan Services. All rights reserved.</p>
                 <p style="font-size: 10px; margin-top: 10px;">This is an automated message. Please do not reply to this email.</p>
             </div>
         </div>
@@ -204,7 +189,7 @@ const generateInternalNotificationTemplate = (inquiry, department) => {
                 <p><strong>Reference ID:</strong> ${inquiry.id}</p>
                 <p><strong>Subject:</strong> ${inquiry.subject}</p>
                 <p><strong>Department:</strong> ${department.name}</p>
-                <p><strong>Submitted:</strong> ${new Date(inquiry.submissionDate).toLocaleString()}</p>
+                <p><strong>Submitted:</strong> ${formatDateTime(inquiry.submissionDate)}</p>
                 <p><strong>Assigned To:</strong> ${inquiry.assignedTo}</p>
                 
                 <div class="action-required">
@@ -222,7 +207,7 @@ const generateInternalNotificationTemplate = (inquiry, department) => {
             </div>
             
             <div class="footer">
-                <p>Vision One Contact Management System</p>
+                <p>Vision Wan Contact Management System</p>
                 <p>Generated: ${new Date().toLocaleString()}</p>
             </div>
         </div>
@@ -230,21 +215,31 @@ const generateInternalNotificationTemplate = (inquiry, department) => {
     </html>
     `;
 };
-// Email sending functions
+// Email sending functions using Resend
 const sendAcknowledgementEmail = async (inquiry) => {
     try {
-        const transporter = createTransporter();
+        if (!process.env.RESEND_API_KEY) {
+            throw new Error('RESEND_API_KEY is not configured');
+        }
         const department = departmentConfig[inquiry.department];
-        const mailOptions = {
-            from: `"Vision One Executive Support" <${process.env.EMAIL_FROM || 'noreply@visionone.com'}>`,
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <support@visionwanservices.com>';
+        const { data, error } = await resend.emails.send({
+            from: fromEmail,
             to: inquiry.email,
             subject: `We've received your inquiry: ${inquiry.subject}`,
             html: generateAcknowledgementTemplate(inquiry, department),
-            replyTo: department.email
-        };
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`Acknowledgement email sent to ${inquiry.email}: ${info.messageId}`);
-        return info;
+            replyTo: department.email,
+            tags: [
+                { name: 'category', value: 'contact_acknowledgement' },
+                { name: 'department', value: inquiry.department },
+                { name: 'priority', value: inquiry.priority }
+            ]
+        });
+        if (error) {
+            throw new Error(`Resend error: ${error.message}`);
+        }
+        console.log(`Acknowledgement email sent to ${inquiry.email}: ${data?.id}`);
+        return data;
     }
     catch (error) {
         console.error('Error sending acknowledgement email:', error);
@@ -253,18 +248,32 @@ const sendAcknowledgementEmail = async (inquiry) => {
 };
 const sendInternalNotificationEmail = async (inquiry) => {
     try {
-        const transporter = createTransporter();
+        if (!process.env.RESEND_API_KEY) {
+            throw new Error('RESEND_API_KEY is not configured');
+        }
         const department = departmentConfig[inquiry.department];
-        const mailOptions = {
-            from: `"Vision One Contact System" <${process.env.EMAIL_FROM || 'info.bluevisionrealtors@gmail.com'}>`,
-            to: department.email,
+        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <system@visionwanservices.com>';
+        const adminEmail = process.env.ADMIN_EMAIL || 'vision1servicesltd@gmail.com';
+        // Get the department email, fallback to admin email
+        const toEmail = department.email || adminEmail;
+        const { data, error } = await resend.emails.send({
+            from: fromEmail,
+            to: toEmail,
+            cc: adminEmail,
             subject: `🚨 New ${inquiry.priority.toUpperCase()} Inquiry: ${inquiry.subject}`,
             html: generateInternalNotificationTemplate(inquiry, department),
-            cc: process.env.EMAIL_ADMIN || 'info.bluevisionrealtors@gmail.com'
-        };
-        const info = await transporter.sendMail(mailOptions);
-        console.log(`Internal notification email sent: ${info.messageId}`);
-        return info;
+            tags: [
+                { name: 'category', value: 'internal_notification' },
+                { name: 'department', value: inquiry.department },
+                { name: 'priority', value: inquiry.priority },
+                { name: 'inquiry_id', value: inquiry.id }
+            ]
+        });
+        if (error) {
+            throw new Error(`Resend error: ${error.message}`);
+        }
+        console.log(`Internal notification email sent: ${data?.id}`);
+        return data;
     }
     catch (error) {
         console.error('Error sending internal notification email:', error);
@@ -319,6 +328,7 @@ const createContactInquiry = async (req, res) => {
             sendInternalNotificationEmail(contactInquiry)
         ]);
         res.status(201).json({
+            success: true,
             message: 'Contact inquiry submitted successfully',
             inquiry: {
                 id: contactInquiry.id,
@@ -335,8 +345,9 @@ const createContactInquiry = async (req, res) => {
     catch (error) {
         console.error('Contact inquiry error:', error);
         res.status(500).json({
+            success: false,
             error: 'Failed to process contact inquiry',
-            details: process.env.NODE_ENV === 'development' ? error : undefined
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 };
@@ -368,41 +379,73 @@ const getContactInquiries = async (req, res) => {
             filteredInquiries = filteredInquiries.slice(0, Number(limit));
         }
         res.json({
+            success: true,
             count: filteredInquiries.length,
-            inquiries: filteredInquiries
+            inquiries: filteredInquiries.map(inquiry => ({
+                id: inquiry.id,
+                name: inquiry.name,
+                email: inquiry.email,
+                phone: inquiry.phone,
+                company: inquiry.company,
+                subject: inquiry.subject,
+                department: inquiry.department,
+                status: inquiry.status,
+                priority: inquiry.priority,
+                submissionDate: inquiry.submissionDate,
+                assignedTo: inquiry.assignedTo
+            }))
         });
     }
     catch (error) {
         console.error('Get inquiries error:', error);
-        res.status(500).json({ error: 'Failed to retrieve contact inquiries' });
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve contact inquiries'
+        });
     }
 };
 exports.getContactInquiries = getContactInquiries;
 const updateInquiryStatus = async (req, res) => {
     try {
         const { id } = req.params;
-        const { status, notes, assignedTo } = req.body;
+        const { status, assignedTo } = req.body;
         const inquiry = contactInquiries.find(i => i.id === id);
         if (!inquiry) {
-            return res.status(404).json({ error: 'Inquiry not found' });
+            return res.status(404).json({
+                success: false,
+                error: 'Inquiry not found'
+            });
         }
         // Validate status
         const validStatuses = ['new', 'in-progress', 'resolved', 'archived'];
         if (status && !validStatuses.includes(status)) {
-            return res.status(400).json({ error: 'Invalid status value' });
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid status value. Valid values: new, in-progress, resolved, archived'
+            });
         }
         // Update inquiry
-        inquiry.status = status || inquiry.status;
+        if (status)
+            inquiry.status = status;
         if (assignedTo)
             inquiry.assignedTo = assignedTo;
         res.json({
+            success: true,
             message: 'Inquiry status updated successfully',
-            inquiry
+            inquiry: {
+                id: inquiry.id,
+                status: inquiry.status,
+                assignedTo: inquiry.assignedTo,
+                updatedAt: new Date().toISOString()
+            }
         });
     }
     catch (error) {
         console.error('Update inquiry error:', error);
-        res.status(500).json({ error: 'Failed to update inquiry status' });
+        res.status(500).json({
+            success: false,
+            error: 'Failed to update inquiry status'
+        });
     }
 };
 exports.updateInquiryStatus = updateInquiryStatus;
@@ -427,20 +470,100 @@ const getInquiryStats = async (req, res) => {
                 booking: contactInquiries.filter(i => i.department === 'booking').length,
                 corporate: contactInquiries.filter(i => i.department === 'corporate').length,
                 support: contactInquiries.filter(i => i.department === 'support').length
-            }
+            },
+            recentInquiries: contactInquiries
+                .sort((a, b) => new Date(b.submissionDate).getTime() - new Date(a.submissionDate).getTime())
+                .slice(0, 5)
+                .map(inquiry => ({
+                id: inquiry.id,
+                name: inquiry.name,
+                subject: inquiry.subject,
+                department: inquiry.department,
+                status: inquiry.status,
+                priority: inquiry.priority,
+                submissionDate: inquiry.submissionDate
+            }))
         };
-        res.json(stats);
+        res.json({
+            success: true,
+            stats
+        });
     }
     catch (error) {
         console.error('Get stats error:', error);
-        res.status(500).json({ error: 'Failed to retrieve inquiry statistics' });
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve inquiry statistics'
+        });
     }
 };
 exports.getInquiryStats = getInquiryStats;
+const getInquiryById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const inquiry = contactInquiries.find(i => i.id === id);
+        if (!inquiry) {
+            return res.status(404).json({
+                success: false,
+                error: 'Inquiry not found'
+            });
+        }
+        res.json({
+            success: true,
+            inquiry
+        });
+    }
+    catch (error) {
+        console.error('Get inquiry by ID error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to retrieve inquiry'
+        });
+    }
+};
+exports.getInquiryById = getInquiryById;
+const resendInquiryEmails = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const inquiry = contactInquiries.find(i => i.id === id);
+        if (!inquiry) {
+            return res.status(404).json({
+                success: false,
+                error: 'Inquiry not found'
+            });
+        }
+        // Get department config
+        const department = departmentConfig[inquiry.department];
+        // Resend both emails
+        const [ackResult, internalResult] = await Promise.allSettled([
+            sendAcknowledgementEmail(inquiry),
+            sendInternalNotificationEmail(inquiry)
+        ]);
+        const results = {
+            acknowledgement: ackResult.status === 'fulfilled' ? 'sent' : 'failed',
+            internalNotification: internalResult.status === 'fulfilled' ? 'sent' : 'failed'
+        };
+        res.json({
+            success: true,
+            message: 'Emails resent successfully',
+            results
+        });
+    }
+    catch (error) {
+        console.error('Resend emails error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to resend emails'
+        });
+    }
+};
+exports.resendInquiryEmails = resendInquiryEmails;
 exports.contactController = {
     createContactInquiry: exports.createContactInquiry,
     getContactInquiries: exports.getContactInquiries,
+    getInquiryById: exports.getInquiryById,
     updateInquiryStatus: exports.updateInquiryStatus,
-    getInquiryStats: exports.getInquiryStats
+    getInquiryStats: exports.getInquiryStats,
+    resendInquiryEmails: exports.resendInquiryEmails
 };
 //# sourceMappingURL=contactController.js.map
