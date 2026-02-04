@@ -98,7 +98,12 @@ const createDocumentsZip = async (booking: BookingData): Promise<string | null> 
 export const createBooking = async (req: Request, res: Response) => {
     try {
         // Get files from multer
-        const files = (req.files as Express.Multer.File[]) || [];
+        const files = req.files as {
+            idDocument?: Express.Multer.File[];
+            drivingLicense?: Express.Multer.File[];
+            depositProof?: Express.Multer.File[];
+        };
+
 
         // Get form data
         const bookingData: BookingData = {
@@ -142,8 +147,8 @@ export const createBooking = async (req: Request, res: Response) => {
         const status = 'confirmed';
 
         // Store file paths
-        const findFile = (name: string) =>
-            files.find(f => f.fieldname === name)?.path;
+        const findFile = (name: 'idDocument' | 'drivingLicense' | 'depositProof') =>
+            files?.[name]?.[0]?.path;
 
         const bookingWithId: BookingData = {
             ...bookingData,
@@ -160,9 +165,9 @@ export const createBooking = async (req: Request, res: Response) => {
 
         console.log(`📝 New booking created: ${bookingId} for ${bookingData.customerName}`);
         console.log(`📁 Documents uploaded:`, {
-            idDocument: !!findFile('idDocument'),
-            drivingLicense: !!findFile('drivingLicense'),
-            depositProof: !!findFile('depositProof')
+            idDocument: !!files.idDocument,
+            drivingLicense: !!files.drivingLicense,
+            depositProof: !!files.depositProof
         });
 
         // Respond immediately
