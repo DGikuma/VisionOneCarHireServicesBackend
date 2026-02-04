@@ -26,26 +26,38 @@ const formatDateTime = (dateStr?: string | null, fallback = 'N/A') => {
     return isNaN(date.getTime()) ? fallback : date.toLocaleString();
 };
 
+
 /* -----------------------------
    Nodemailer Transporter
 --------------------------------*/
-const createTransporter = () => {
-    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        throw new Error('Missing email configuration in environment variables');
+let transporter: nodemailer.Transporter | null = null;
+
+export const getTransporter = () => {
+    if (transporter) return transporter;
+
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        throw new Error('Missing EMAIL_USER or EMAIL_PASS in environment variables');
     }
 
-    return nodemailer.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'true',
+    transporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 465,
+        secure: true,
         auth: {
             user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS
+            pass: process.env.EMAIL_PASS, // 16-char Gmail App Password
         },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000
+        connectionTimeout: 20000,
+        greetingTimeout: 20000,
+        socketTimeout: 20000,
     });
+
+    // Verify connection at startup
+    transporter.verify()
+        .then(() => console.log('✅ SMTP connection ready'))
+        .catch(err => console.error('❌ SMTP verify failed:', err));
+
+    return transporter;
 };
 
 /* -----------------------------
@@ -230,7 +242,7 @@ export const createBooking = async (req: Request, res: Response) => {
    Email Helpers (Updated)
 --------------------------------*/
 const sendAdminNotification = async (booking: BookingData, zipPath: string | null) => {
-    const transporter = createTransporter();
+    const transporter = getTransporter(); // use singleton
 
     const attachments = [];
     if (zipPath && fs.existsSync(zipPath)) {
@@ -242,7 +254,7 @@ const sendAdminNotification = async (booking: BookingData, zipPath: string | nul
     }
 
     const mailOptions = {
-        from: process.env.EMAIL_FROM || '"Vision One Car Hire" <info.bluevisionrealtors@gmail.com>',
+        from: process.env.EMAIL_FROM || '"Vision Wan Services" <info.bluevisionrealtors@gmail.com>',
         to: process.env.ADMIN_EMAIL || 'info.bluevisionrealtors@gmail.com',
         subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})`,
         html: `
@@ -284,12 +296,19 @@ const sendAdminNotification = async (booking: BookingData, zipPath: string | nul
         attachments
     };
 
-    await transporter.sendMail(mailOptions);
+    await transporter.sendMail({
+        from: process.env.EMAIL_FROM || `"Vision Wan Services" <${process.env.EMAIL_USER}>`,
+        to: process.env.ADMIN_EMAIL || process.env.EMAIL_USER,
+        subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})`,
+        html: generateEmailTemplate(booking),
+        attachments
+    });
+
     console.log(`📧 Admin notification sent for booking ${booking.id}`);
 };
 
 const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | null) => {
-    const transporter = createTransporter();
+    const transporter = getTransporter(); // use singleton
     const pdfBuffer = await generateBookingPDF(booking);
 
     const attachments: any[] = [
@@ -300,7 +319,6 @@ const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | 
         }
     ];
 
-    // Add documents ZIP if available
     if (zipPath && fs.existsSync(zipPath)) {
         attachments.push({
             filename: `${booking.idNumber}_your_documents.zip`,
@@ -310,16 +328,22 @@ const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | 
     }
 
     const mailOptions = {
-        from: process.env.EMAIL_FROM || '"Vision One Car Hire" <bookings@visiononecarhire.com>',
+        from: process.env.EMAIL_FROM || '"Vision Wan Services" <bookings@visiononecarhire.com>',
         to: booking.email,
-        subject: `✅ Booking Confirmed: ${booking.id} - Vision One Car Hire`,
+        subject: `✅ Booking Confirmed: ${booking.id} - Vision Wan Services`,
         html: generateEmailTemplate(booking),
         attachments
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Confirmation email sent to ${booking.email}: ${info.messageId}`);
-    return info;
+    await transporter.sendMail({
+        from: process.env.EMAIL_FROM || `"Vision Wan Services" <${process.env.EMAIL_USER}>`,
+        to: booking.email,
+        subject: `✅ Booking Confirmed: ${booking.id} - Vision Wan Services`,
+        html: generateEmailTemplate(booking),
+        attachments
+    });
+
+    console.log(`✅ Confirmation email sent to ${booking.email}`);
 };
 
 /* -----------------------------
@@ -335,7 +359,7 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         doc.on('end', () => resolve(Buffer.concat(buffers)));
 
         // Header
-        doc.fillColor('#FF6B35').fontSize(25).text('Vision One Car Hire', { align: 'center' });
+        doc.fillColor('#FF6B35').fontSize(25).text('Vision Wan Servic', { align: 'center' });
         doc.moveDown();
         doc.fillColor('#333').fontSize(20).text('Booking Confirmation', { align: 'center' });
         doc.moveDown();
@@ -386,8 +410,8 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         doc.text('• Keep all booking documents for your records.');
         doc.moveDown();
 
-        doc.fontSize(12).text('Thank you for choosing Vision One Car Hire!', { align: 'center' });
-        doc.text('For inquiries: vison1servicesltd@gmail.com', { align: 'center' });
+        doc.fontSize(12).text('Thank you for choosing Vision Wan Services !', { align: 'center' });
+        doc.text('For inquiries: vision1servicesltd@gmail.com', { align: 'center' });
 
         doc.end();
     });
@@ -416,12 +440,12 @@ const generateEmailTemplate = (booking: BookingData): string => {
     </head>
     <body>
       <div class="header">
-        <h1>Vision One Car Hire</h1>
+        <h1>Vision Wan Services</h1>
         <h2>Booking Confirmation</h2>
       </div>
       <div class="content">
         <p>Dear ${booking.customerName},</p>
-        <p>Thank you for booking with Vision One Car Hire! Your reservation has been confirmed.</p>
+        <p>Thank you for booking with Vision Wan Services! Your reservation has been confirmed.</p>
         
         <div class="booking-details">
           <h3>Booking Summary</h3>
@@ -471,16 +495,16 @@ const generateEmailTemplate = (booking: BookingData): string => {
         <p><strong>Deposit Information:</strong><br/>
         Your security deposit has been recorded. Please bring the proof of payment when picking up the vehicle.</p>
         
-        <p>Safe travels,<br>The Vision One Car Hire Team</p>
+        <p>Safe travels,<br>The Vision Wan Services Team</p>
       </div>
       <div class="footer">
-        <p><strong>Vision One Car Hire Services</strong><br>
+        <p><strong>Vision Wan Services</strong><br>
         Kenya: +254 (705) 336 311 | UK: +44 (7397) 549 590<br>
         Email: vison1servicesltd@gmail.com</p>
         <p style="font-size: 11px; color: #666;">
           This email contains confidential information. If you received this email in error, please delete it immediately.
         </p>
-        <p>© ${new Date().getFullYear()} Vision One Car Hire. All rights reserved.</p>
+        <p>© ${new Date().getFullYear()} Vision Wan Services. All rights reserved.</p>
       </div>
     </body>
     </html>
