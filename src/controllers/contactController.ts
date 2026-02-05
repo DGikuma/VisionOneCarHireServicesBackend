@@ -51,16 +51,19 @@ const departmentConfig = {
 // Email transporter configuration
 const createTransporter = () => {
     return nodemailer.createTransport({
-        host: 'smtp.gmail.com', // Example: Gmail SMTP
+        host: 'smtp.office365.com', // Outlook/Office365 SMTP
         port: 587,
-        secure: false, // true for 465, false for other ports
+        secure: false, // Use STARTTLS
         auth: {
-            user: 'info.bluevisionrealtors@gmail.com', // Your email
-            pass: 'wcsh bpzm bqzi warj' // Use App Password, not regular password
+            user: 'vision1servicesltd@outlook.com',
+            pass: '@VisionWan100%'
         },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000
+        connectionTimeout: 30000, // Increased timeout
+        greetingTimeout: 30000,
+        socketTimeout: 30000,
+        tls: {
+            ciphers: 'SSLv3' // Sometimes needed for Outlook
+        }
     });
 };
 

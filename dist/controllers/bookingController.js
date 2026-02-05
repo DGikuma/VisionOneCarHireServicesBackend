@@ -10,29 +10,31 @@ const path_1 = __importDefault(require("path"));
 const adm_zip_1 = __importDefault(require("adm-zip"));
 const nodemailer_1 = __importDefault(require("nodemailer"));
 const UPLOAD_DIR = path_1.default.resolve(process.cwd(), 'uploads');
-// HARDCODED EMAIL CONFIGURATION
+// OUTLOOK EMAIL CONFIGURATION
 const EMAIL_CONFIG = {
-    service: 'gmail',
-    host: 'smtp.gmail.com',
+    host: 'smtp.office365.com', // Outlook SMTP server
     port: 587,
-    secure: false,
+    secure: false, // Use STARTTLS
     auth: {
-        user: 'info.bluevisionrealtors@gmail.com', // Replace with your email
-        pass: 'wcsh bpzm bqzi warj' // Replace with your App Password
+        user: 'vision1servicesltd@outlook.com',
+        pass: '@VisionWan100%'
     },
-    from: 'Vision Wan Services <info.bluevisionrealtors@gmail.com>', // Replace with your email
-    adminEmail: 'vision1servicesltd@gmail.com', // Replace with admin email
+    from: 'Vision Wan Services <vision1servicesltd@outlook.com>',
+    adminEmail: 'vision1servicesltd@outlook.com',
 };
-// Create email transporter
+// Create email transporter with Outlook configuration
 const createTransporter = () => {
     return nodemailer_1.default.createTransport({
         host: EMAIL_CONFIG.host,
         port: EMAIL_CONFIG.port,
         secure: EMAIL_CONFIG.secure,
         auth: EMAIL_CONFIG.auth,
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000
+        connectionTimeout: 30000, // Increased timeout
+        greetingTimeout: 30000,
+        socketTimeout: 30000,
+        tls: {
+            ciphers: 'SSLv3' // Sometimes needed for Outlook
+        }
     });
 };
 // Test the email configuration
@@ -40,11 +42,18 @@ const testEmailConnection = async () => {
     try {
         const transporter = createTransporter();
         await transporter.verify();
-        console.log('✅ Email server connection verified');
+        console.log('✅ Outlook email server connection verified');
         return true;
     }
     catch (error) {
-        console.error('❌ Email server connection failed:', error);
+        console.error('❌ Outlook email server connection failed:', error);
+        // Provide troubleshooting tips
+        console.log('\n⚠️ OUTLOOK TROUBLESHOOTING:');
+        console.log('1. Make sure your Outlook password is correct');
+        console.log('2. Enable "Less secure app access" in Outlook settings');
+        console.log('3. Try using an App Password if 2FA is enabled');
+        console.log('4. Check if your account allows SMTP access');
+        console.log('5. Try using port 465 with secure: true');
         return false;
     }
 };
@@ -195,15 +204,28 @@ const createBooking = async (req, res) => {
                 }
             }
         });
-        // Send emails in background
+        // Send emails in background with error handling
         setTimeout(async () => {
             try {
+                console.log(`📧 Starting email process for booking ${booking.id}...`);
                 const zipPath = await createDocumentsZip(booking);
-                await Promise.all([
-                    sendAdminNotification(booking, zipPath),
-                    sendCustomerConfirmation(booking, zipPath)
-                ]);
-                console.log(`✅ All emails sent for booking ${booking.id}`);
+                console.log(`📧 ZIP file ${zipPath ? 'created' : 'not needed'}`);
+                // Test connection first
+                try {
+                    const transporter = createTransporter();
+                    await transporter.verify();
+                    console.log('✅ Outlook connection verified, sending emails...');
+                    await Promise.all([
+                        sendAdminNotification(booking, zipPath),
+                        sendCustomerConfirmation(booking, zipPath)
+                    ]);
+                    console.log(`✅ All emails sent for booking ${booking.id}`);
+                }
+                catch (emailError) {
+                    console.error(`❌ Email connection/sending failed for ${booking.id}:`, emailError);
+                    console.log('⚠️ Booking was saved, but emails could not be sent');
+                    // Don't throw - booking was successful
+                }
                 if (zipPath && fs_1.default.existsSync(zipPath)) {
                     setTimeout(() => {
                         fs_1.default.unlinkSync(zipPath);
@@ -211,8 +233,9 @@ const createBooking = async (req, res) => {
                     }, 5000);
                 }
             }
-            catch (emailError) {
-                console.error(`❌ Email sending failed for ${booking.id}:`, emailError);
+            catch (error) {
+                console.error(`❌ Background email process failed for ${booking.id}:`, error);
+                console.log('⚠️ Booking was saved successfully, but email process failed');
             }
         }, 0);
     }
@@ -227,7 +250,7 @@ const createBooking = async (req, res) => {
 };
 exports.createBooking = createBooking;
 /* -----------------------------
-   Nodemailer Email Helpers
+   Outlook Email Helpers
 --------------------------------*/
 const sendAdminNotification = async (booking, zipPath) => {
     try {
@@ -401,7 +424,7 @@ const sendCustomerConfirmation = async (booking, zipPath) => {
                 <div class="footer">
                     <p><strong>Vision Wan Services</strong><br>
                     Kenya: +254 (705) 336 311 | UK: +44 (7397) 549 590<br>
-                    Email: vision1servicesltd@gmail.com</p>
+                    Email: vision1servicesltd@outlook.com</p>
                     <p style="font-size: 11px; color: #666;">
                         This email contains confidential information. If you received this email in error, please delete it immediately.
                     </p>
@@ -483,7 +506,7 @@ const generateBookingPDF = (booking) => {
         doc.text('• Keep all booking documents for your records.');
         doc.moveDown();
         doc.fontSize(12).text('Thank you for choosing Vision Wan Services!', { align: 'center' });
-        doc.text('For inquiries: vision1servicesltd@gmail.com', { align: 'center' });
+        doc.text('For inquiries: vision1servicesltd@outlook.com', { align: 'center' });
         doc.end();
     });
 };
@@ -526,4 +549,46 @@ const sendBookingConfirmation = async (req, res) => {
     }
 };
 exports.sendBookingConfirmation = sendBookingConfirmation;
+/* -----------------------------
+   Alternative Outlook Configuration Options
+--------------------------------*/
+// Option 1: Use Outlook with SSL (port 465)
+const createTransporterSSL = () => {
+    return nodemailer_1.default.createTransport({
+        host: 'smtp.office365.com',
+        port: 465,
+        secure: true, // SSL
+        auth: EMAIL_CONFIG.auth,
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
+        socketTimeout: 30000
+    });
+};
+// Option 2: Use Outlook Live/Hotmail
+const createTransporterHotmail = () => {
+    return nodemailer_1.default.createTransport({
+        host: 'smtp-mail.outlook.com',
+        port: 587,
+        secure: false,
+        auth: {
+            user: 'your-email@hotmail.com', // Hotmail address
+            pass: 'your-hotmail-password'
+        },
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
+        socketTimeout: 30000
+    });
+};
+// Option 3: Use Ethereal (Test SMTP - works on Render)
+const createTransporterEthereal = () => {
+    return nodemailer_1.default.createTransport({
+        host: 'smtp.ethereal.email',
+        port: 587,
+        secure: false,
+        auth: {
+            user: 'kassandra.muller@ethereal.email',
+            pass: 'KUjAN3nPVwkX4sVwCJ'
+        }
+    });
+};
 //# sourceMappingURL=bookingController.js.map
