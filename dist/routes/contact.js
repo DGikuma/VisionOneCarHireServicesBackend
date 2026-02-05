@@ -9,8 +9,8 @@ const router = express_1.default.Router();
 /**
  * @swagger
  * tags:
- *   name: Contacts
- *   description: Contact inquiry management
+ *   name: Contact
+ *   description: Contact form and inquiries management
  */
 /**
  * @swagger
@@ -21,27 +21,33 @@ const router = express_1.default.Router();
  *       required:
  *         - name
  *         - email
+ *         - subject
  *         - message
+ *         - department
  *       properties:
  *         name:
  *           type: string
- *           description: Name of the person
  *         email:
  *           type: string
  *           format: email
+ *         phone:
+ *           type: string
+ *         company:
+ *           type: string
+ *         subject:
+ *           type: string
  *         message:
  *           type: string
- *           description: Inquiry message
- *         status:
+ *         department:
  *           type: string
- *           description: Inquiry status (pending/resolved)
+ *           enum: [general, booking, corporate, support]
  */
 /**
  * @swagger
- * /api/contact/contact:
+ * /api/contact:
  *   post:
  *     summary: Submit a new contact inquiry
- *     tags: [Contacts]
+ *     tags: [Contact]
  *     requestBody:
  *       required: true
  *       content:
@@ -51,38 +57,82 @@ const router = express_1.default.Router();
  *     responses:
  *       201:
  *         description: Inquiry submitted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 inquiry:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     subject:
+ *                       type: string
+ *                     department:
+ *                       type: string
+ *                     priority:
+ *                       type: string
  *       400:
  *         description: Validation error
+ *       500:
+ *         description: Server error
  */
-router.post('/contact', contactController_1.contactController.createContactInquiry);
+router.post('/', contactController_1.contactController.createContactInquiry); // Changed from '/contact' to '/'
 /**
  * @swagger
- * /api/contact/contact/inquiries:
+ * /api/contact:
  *   get:
- *     summary: Get all contact inquiries
- *     tags: [Contacts]
+ *     summary: Get all contact inquiries (with optional filters)
+ *     tags: [Contact]
+ *     parameters:
+ *       - in: query
+ *         name: department
+ *         schema:
+ *           type: string
+ *           enum: [general, booking, corporate, support]
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [new, in-progress, resolved, archived]
+ *       - in: query
+ *         name: priority
+ *         schema:
+ *           type: string
+ *           enum: [urgent, high, normal, low]
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
  *     responses:
  *       200:
- *         description: List of contact inquiries
+ *         description: List of inquiries
  */
-router.get('/contact/inquiries', contactController_1.contactController.getContactInquiries);
+router.get('/', contactController_1.contactController.getContactInquiries); // Changed from '/contact/inquiries' to '/'
 /**
  * @swagger
- * /api/contact/contact/stats:
+ * /api/contact/stats:
  *   get:
- *     summary: Get statistics for inquiries
- *     tags: [Contacts]
+ *     summary: Get contact inquiry statistics
+ *     tags: [Contact]
  *     responses:
  *       200:
- *         description: Inquiry statistics
+ *         description: Statistics about inquiries
  */
-router.get('/contact/stats', contactController_1.contactController.getInquiryStats);
+router.get('/stats', contactController_1.contactController.getInquiryStats); // Changed from '/contact/stats' to '/stats'
 /**
  * @swagger
- * /api/contact/contact/inquiries/{id}/status:
+ * /api/contact/{id}/status:
  *   patch:
  *     summary: Update status of a contact inquiry
- *     tags: [Contacts]
+ *     tags: [Contact]
  *     parameters:
  *       - in: path
  *         name: id
@@ -96,16 +146,22 @@ router.get('/contact/stats', contactController_1.contactController.getInquirySta
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - status
  *             properties:
  *               status:
  *                 type: string
- *                 description: New status (pending/resolved)
+ *                 enum: [new, in-progress, resolved, archived]
+ *               notes:
+ *                 type: string
+ *               assignedTo:
+ *                 type: string
  *     responses:
  *       200:
  *         description: Inquiry status updated
- *       400:
- *         description: Invalid input
+ *       404:
+ *         description: Inquiry not found
  */
-router.patch('/contact/inquiries/:id/status', contactController_1.contactController.updateInquiryStatus);
+router.patch('/:id/status', contactController_1.contactController.updateInquiryStatus); // Changed from '/contact/inquiries/:id/status' to '/:id/status'
 exports.default = router;
 //# sourceMappingURL=contact.js.map
