@@ -3,17 +3,55 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getBookingById = exports.getAllBookings = exports.sendBookingConfirmation = exports.createBooking = void 0;
-const resend_1 = require("resend");
+exports.bookings = exports.sendBookingConfirmation = exports.createBooking = void 0;
 const pdfkit_1 = __importDefault(require("pdfkit"));
 const fs_1 = __importDefault(require("fs"));
 const path_1 = __importDefault(require("path"));
 const adm_zip_1 = __importDefault(require("adm-zip"));
+const nodemailer_1 = __importDefault(require("nodemailer"));
 const UPLOAD_DIR = path_1.default.resolve(process.cwd(), 'uploads');
+// HARDCODED EMAIL CONFIGURATION
+const EMAIL_CONFIG = {
+    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    auth: {
+        user: 'info.bluevisionrealtors@gmail.com', // Replace with your email
+        pass: 'wcsh bpzm bqzi warj' // Replace with your App Password
+    },
+    from: 'Vision Wan Services <info.bluevisionrealtors@gmail.com>', // Replace with your email
+    adminEmail: 'vision1servicesltd@gmail.com', // Replace with admin email
+};
+// Create email transporter
+const createTransporter = () => {
+    return nodemailer_1.default.createTransport({
+        host: EMAIL_CONFIG.host,
+        port: EMAIL_CONFIG.port,
+        secure: EMAIL_CONFIG.secure,
+        auth: EMAIL_CONFIG.auth,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+    });
+};
+// Test the email configuration
+const testEmailConnection = async () => {
+    try {
+        const transporter = createTransporter();
+        await transporter.verify();
+        console.log('✅ Email server connection verified');
+        return true;
+    }
+    catch (error) {
+        console.error('❌ Email server connection failed:', error);
+        return false;
+    }
+};
+testEmailConnection();
 // In-memory storage for bookings
 const bookings = [];
-// Initialize Resend client
-const resend = new resend_1.Resend(process.env.RESEND_API_KEY);
+exports.bookings = bookings;
 /* -----------------------------
    Safe Date Utilities
 --------------------------------*/
@@ -30,9 +68,23 @@ const formatDateTime = (dateStr, fallback = 'N/A') => {
     return isNaN(date.getTime()) ? fallback : date.toLocaleString();
 };
 /* -----------------------------
-   Create ZIP of uploaded documents as Buffer
+   Helper function to validate and normalize idType
 --------------------------------*/
-const createDocumentsZipBuffer = async (booking) => {
+const normalizeIdType = (idType) => {
+    const validTypes = ['id', 'passport', 'national_id'];
+    if (validTypes.includes(idType)) {
+        return idType;
+    }
+    // Default mapping
+    if (idType === 'national_id' || idType === 'national-id') {
+        return 'national_id';
+    }
+    return 'id'; // Default fallback
+};
+/* -----------------------------
+   Create ZIP of uploaded documents
+--------------------------------*/
+const createDocumentsZip = async (booking) => {
     try {
         const filesToZip = [];
         if (booking.idDocumentPath && fs_1.default.existsSync(booking.idDocumentPath)) {
@@ -49,17 +101,325 @@ const createDocumentsZipBuffer = async (booking) => {
             return null;
         }
         const zip = new adm_zip_1.default();
-        // Add files to zip with proper names
+        const zipFileName = `${booking.idNumber}_documents.zip`;
+        const zipPath = path_1.default.join(UPLOAD_DIR, zipFileName);
         filesToZip.forEach(filePath => {
             const fileName = path_1.default.basename(filePath);
             zip.addLocalFile(filePath, undefined, fileName);
         });
-        // Return as buffer for Resend
-        return zip.toBuffer();
+        zip.writeZip(zipPath);
+        console.log(`ZIP created: ${zipPath}`);
+        return zipPath;
     }
     catch (error) {
-        console.error('Error creating ZIP buffer:', error);
+        console.error('Error creating ZIP:', error);
         return null;
+    }
+};
+/* -----------------------------
+   Create Booking - FIXED VERSION
+--------------------------------*/
+const createBooking = async (req, res) => {
+    try {
+        // Get files from multer
+        const files = req.files;
+        // Validate essential fields
+        const requiredFields = [
+            'customerName', 'email', 'phone', 'pickupDate', 'returnDate',
+            'carType', 'pickupLocation', 'idNumber', 'idType'
+        ];
+        const missingFields = requiredFields.filter(field => !req.body[field]);
+        if (missingFields.length > 0) {
+            return res.status(400).json({
+                success: false,
+                error: `Missing required fields: ${missingFields.join(', ')}`
+            });
+        }
+        const termsAccepted = req.body.termsAccepted === 'true' || req.body.termsAccepted === true;
+        if (!termsAccepted) {
+            return res.status(400).json({
+                success: false,
+                error: 'Terms and conditions must be accepted'
+            });
+        }
+        // Generate booking ID and create complete booking object
+        const bookingId = `V1-${Date.now().toString().slice(-8)}`;
+        const status = 'confirmed';
+        const bookingDate = new Date().toISOString();
+        // Store file paths
+        const findFile = (name) => files?.[name]?.[0]?.path;
+        // Create the COMPLETE BookingData object with all required properties
+        const booking = {
+            id: bookingId,
+            customerName: req.body.customerName,
+            email: req.body.email,
+            phone: req.body.phone,
+            pickupDate: req.body.pickupDate,
+            returnDate: req.body.returnDate,
+            carType: req.body.carType,
+            pickupLocation: req.body.pickupLocation,
+            dropoffLocation: req.body.dropoffLocation || undefined,
+            additionalInfo: req.body.additionalInfo || undefined,
+            idNumber: req.body.idNumber,
+            idType: normalizeIdType(req.body.idType),
+            termsAccepted,
+            bookingDate,
+            status,
+            idDocumentPath: findFile('idDocument'),
+            drivingLicensePath: findFile('drivingLicense'),
+            depositProofPath: findFile('depositProof')
+        };
+        bookings.push(booking);
+        console.log(`📝 New booking created: ${bookingId} for ${booking.customerName}`);
+        // Respond immediately
+        res.status(201).json({
+            success: true,
+            message: 'Booking created successfully',
+            booking: {
+                id: booking.id,
+                customerName: booking.customerName,
+                email: booking.email,
+                phone: booking.phone,
+                pickupDate: formatDate(booking.pickupDate),
+                returnDate: formatDate(booking.returnDate),
+                carType: booking.carType,
+                pickupLocation: booking.pickupLocation,
+                idNumber: booking.idNumber,
+                idType: booking.idType,
+                status: booking.status,
+                bookingDate: formatDateTime(booking.bookingDate),
+                hasDocuments: {
+                    idDocument: !!findFile('idDocument'),
+                    drivingLicense: !!findFile('drivingLicense'),
+                    depositProof: !!findFile('depositProof')
+                }
+            }
+        });
+        // Send emails in background
+        setTimeout(async () => {
+            try {
+                const zipPath = await createDocumentsZip(booking);
+                await Promise.all([
+                    sendAdminNotification(booking, zipPath),
+                    sendCustomerConfirmation(booking, zipPath)
+                ]);
+                console.log(`✅ All emails sent for booking ${booking.id}`);
+                if (zipPath && fs_1.default.existsSync(zipPath)) {
+                    setTimeout(() => {
+                        fs_1.default.unlinkSync(zipPath);
+                        console.log(`🗑️ Cleaned up ZIP file: ${zipPath}`);
+                    }, 5000);
+                }
+            }
+            catch (emailError) {
+                console.error(`❌ Email sending failed for ${booking.id}:`, emailError);
+            }
+        }, 0);
+    }
+    catch (error) {
+        console.error('❌ Booking creation error:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to create booking',
+            message: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+exports.createBooking = createBooking;
+/* -----------------------------
+   Nodemailer Email Helpers
+--------------------------------*/
+const sendAdminNotification = async (booking, zipPath) => {
+    try {
+        const transporter = createTransporter();
+        const attachments = [];
+        if (zipPath && fs_1.default.existsSync(zipPath)) {
+            attachments.push({
+                filename: `${booking.idNumber}_documents.zip`,
+                path: zipPath,
+                contentType: 'application/zip'
+            });
+        }
+        // Get display name for idType
+        const idTypeDisplay = booking.idType === 'passport' ? 'Passport No:' :
+            booking.idType === 'national_id' ? 'National ID:' : 'ID Number:';
+        const mailOptions = {
+            from: EMAIL_CONFIG.from,
+            to: EMAIL_CONFIG.adminEmail,
+            subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})`,
+            html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #FF6B35;">🚗 NEW CAR BOOKING REQUEST</h2>
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                    <h3 style="color: #333; border-bottom: 2px solid #FF6B35; padding-bottom: 10px;">Booking Details</h3>
+                    <table style="width: 100%; border-collapse: collapse;">
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Booking ID:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.id}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Customer:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.customerName}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>${idTypeDisplay}</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.idNumber}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Email:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.email}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Phone:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.phone || 'N/A'}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Vehicle:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.carType}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Pickup:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${formatDate(booking.pickupDate)} at ${booking.pickupLocation}</td></tr>
+                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Return:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${formatDate(booking.returnDate)}</td></tr>
+                        <tr><td style="padding: 8px;"><strong>Deposit Proof:</strong></td><td style="padding: 8px;">${booking.depositProofPath ? '✅ Uploaded' : '❌ Missing'}</td></tr>
+                    </table>
+                </div>
+                
+                ${booking.additionalInfo ? `
+                <div style="background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 15px 0;">
+                    <strong>Special Requests:</strong><br/>
+                    ${booking.additionalInfo}
+                </div>
+                ` : ''}
+                
+                <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee;">
+                    <p><strong>📅 Booking Received:</strong> ${formatDateTime(booking.bookingDate)}</p>
+                    <p><strong>🔒 Terms Accepted:</strong> ${booking.termsAccepted ? '✅ Yes' : '❌ No'}</p>
+                </div>
+                
+                <div style="background: #FF6B35; color: white; padding: 15px; border-radius: 5px; margin-top: 20px; text-align: center;">
+                    <p style="margin: 0; font-weight: bold;">ACTION REQUIRED: Process security deposit and verify documents</p>
+                </div>
+            </div>
+            `,
+            attachments,
+            replyTo: booking.email
+        };
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`📧 Admin notification sent for booking ${booking.id}: ${info.messageId}`);
+        return info;
+    }
+    catch (error) {
+        console.error('Error sending admin notification:', error);
+        throw error;
+    }
+};
+const sendCustomerConfirmation = async (booking, zipPath) => {
+    try {
+        const transporter = createTransporter();
+        const pdfBuffer = await generateBookingPDF(booking);
+        const attachments = [
+            {
+                filename: `booking-confirmation-${booking.id}.pdf`,
+                content: pdfBuffer,
+                contentType: 'application/pdf'
+            }
+        ];
+        if (zipPath && fs_1.default.existsSync(zipPath)) {
+            attachments.push({
+                filename: `${booking.idNumber}_your_documents.zip`,
+                path: zipPath,
+                contentType: 'application/zip'
+            });
+        }
+        // Get display name for idType
+        const idTypeDisplay = booking.idType === 'passport' ? 'Passport No:' :
+            booking.idType === 'national_id' ? 'National ID:' : 'ID Number:';
+        const mailOptions = {
+            from: EMAIL_CONFIG.from,
+            to: booking.email,
+            subject: `✅ Booking Confirmed: ${booking.id} - Vision Wan Services`,
+            html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                    .header { background: #FF6B35; color: white; padding: 20px; text-align: center; }
+                    .content { padding: 20px; }
+                    .booking-details { background: #f7fafc; padding: 20px; border-radius: 5px; margin: 20px 0; }
+                    .document-status { background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 20px 0; }
+                    .footer { background: #edf2f7; padding: 15px; text-align: center; font-size: 12px; }
+                    table { width: 100%; border-collapse: collapse; }
+                    td { padding: 10px; border-bottom: 1px solid #ddd; }
+                    .status-ok { color: green; }
+                    .status-pending { color: orange; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>Vision Wan Services</h1>
+                    <h2>Booking Confirmation</h2>
+                </div>
+                <div class="content">
+                    <p>Dear ${booking.customerName},</p>
+                    <p>Thank you for booking with Vision Wan Services! Your reservation has been confirmed.</p>
+                    
+                    <div class="booking-details">
+                        <h3>Booking Summary</h3>
+                        <table>
+                            <tr><td><strong>Booking ID:</strong></td><td>${booking.id}</td></tr>
+                            <tr><td><strong>Car Type:</strong></td><td>${booking.carType}</td></tr>
+                            <tr><td><strong>Pickup Date:</strong></td><td>${formatDate(booking.pickupDate)}</td></tr>
+                            <tr><td><strong>Return Date:</strong></td><td>${formatDate(booking.returnDate)}</td></tr>
+                            <tr><td><strong>Pickup Location:</strong></td><td>${booking.pickupLocation || 'Main Office'}</td></tr>
+                            <tr><td><strong>${idTypeDisplay}</strong></td><td>${booking.idNumber}</td></tr>
+                        </table>
+                    </div>
+                    
+                    <div class="document-status">
+                        <h3>Document Status</h3>
+                        <table>
+                            <tr>
+                                <td><strong>ID Document:</strong></td>
+                                <td>
+                                    ${booking.idDocumentPath
+                ? '<span class="status-ok">✓ Uploaded</span>'
+                : '<span class="status-pending">⏳ Pending</span>'}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Driving License:</strong></td>
+                                <td>
+                                    ${booking.drivingLicensePath
+                ? '<span class="status-ok">✓ Uploaded</span>'
+                : '<span class="status-pending">⏳ Pending</span>'}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td><strong>Deposit Proof:</strong></td>
+                                <td>${booking.depositProofPath ? '<span class="status-ok">✓ Uploaded</span>' : '<span class="status-pending">⏳ Pending</span>'}</td>
+                            </tr>
+                        </table>
+                    </div>
+                    
+                    <div style="background: #fff8e1; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                        <h4>📋 What's Next:</h4>
+                        <ol>
+                            <li>Your booking confirmation PDF is attached.</li>
+                            <li>All your uploaded documents are included in the ZIP file.</li>
+                            <li>Please bring your original documents for verification at pickup.</li>
+                            <li>Present your deposit proof receipt when collecting the vehicle.</li>
+                        </ol>
+                    </div>
+                    
+                    <p><strong>Deposit Information:</strong><br/>
+                    Your security deposit has been recorded. Please bring the proof of payment when picking up the vehicle.</p>
+                    
+                    <p>Safe travels,<br>The Vision Wan Services Team</p>
+                </div>
+                <div class="footer">
+                    <p><strong>Vision Wan Services</strong><br>
+                    Kenya: +254 (705) 336 311 | UK: +44 (7397) 549 590<br>
+                    Email: vision1servicesltd@gmail.com</p>
+                    <p style="font-size: 11px; color: #666;">
+                        This email contains confidential information. If you received this email in error, please delete it immediately.
+                    </p>
+                    <p>© ${new Date().getFullYear()} Vision Wan Services. All rights reserved.</p>
+                </div>
+            </body>
+            </html>
+            `,
+            attachments,
+            replyTo: EMAIL_CONFIG.adminEmail
+        };
+        const info = await transporter.sendMail(mailOptions);
+        console.log(`✅ Confirmation email sent to ${booking.email}: ${info.messageId}`);
+        return info;
+    }
+    catch (error) {
+        console.error('Error sending customer confirmation:', error);
+        throw error;
     }
 };
 /* -----------------------------
@@ -72,6 +432,9 @@ const generateBookingPDF = (booking) => {
         doc.on('data', buffers.push.bind(buffers));
         doc.on('error', reject);
         doc.on('end', () => resolve(Buffer.concat(buffers)));
+        // Get display name for idType
+        const idTypeDisplay = booking.idType === 'passport' ? 'Passport No' :
+            booking.idType === 'national_id' ? 'National ID' : 'ID Number';
         // Header
         doc.fillColor('#FF6B35').fontSize(25).text('Vision Wan Services', { align: 'center' });
         doc.moveDown();
@@ -86,7 +449,7 @@ const generateBookingPDF = (booking) => {
         doc.fontSize(12).text(`Name: ${booking.customerName}`);
         doc.text(`Email: ${booking.email}`);
         doc.text(`Phone: ${booking.phone || 'N/A'}`);
-        doc.text(`${booking.idType === 'passport' ? 'Passport No' : 'ID Number'}: ${booking.idNumber}`);
+        doc.text(`${idTypeDisplay}: ${booking.idNumber}`);
         if (booking.additionalInfo)
             doc.text(`Additional Info: ${booking.additionalInfo}`);
         doc.moveDown();
@@ -125,371 +488,7 @@ const generateBookingPDF = (booking) => {
     });
 };
 /* -----------------------------
-   Email Templates
---------------------------------*/
-const generateAdminEmailTemplate = (booking, hasDocuments) => {
-    return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-            .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
-            .header { background: #FF6B35; color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; }
-            .booking-details { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #FF6B35; }
-            table { width: 100%; border-collapse: collapse; }
-            td { padding: 10px; border-bottom: 1px solid #eee; }
-            .alert { background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 5px; margin: 20px 0; }
-            .footer { background: #f8f9fa; padding: 15px; text-align: center; font-size: 12px; color: #666; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>Vision Wan Services</h1>
-                <h2>🚗 NEW CAR BOOKING REQUEST</h2>
-            </div>
-            
-            <div class="content">
-                <div class="alert">
-                    <h3 style="margin-top: 0; color: #d35400;">ACTION REQUIRED</h3>
-                    <p>Process security deposit and verify customer documents</p>
-                </div>
-                
-                <div class="booking-details">
-                    <h3 style="color: #333; border-bottom: 2px solid #FF6B35; padding-bottom: 10px;">Booking Details</h3>
-                    <table>
-                        <tr><td><strong>Booking ID:</strong></td><td>${booking.id}</td></tr>
-                        <tr><td><strong>Customer:</strong></td><td>${booking.customerName}</td></tr>
-                        <tr><td><strong>${booking.idType === 'passport' ? 'Passport No:' : 'ID Number:'}</strong></td><td>${booking.idNumber}</td></tr>
-                        <tr><td><strong>Email:</strong></td><td>${booking.email}</td></tr>
-                        <tr><td><strong>Phone:</strong></td><td>${booking.phone || 'N/A'}</td></tr>
-                        <tr><td><strong>Vehicle:</strong></td><td>${booking.carType}</td></tr>
-                        <tr><td><strong>Pickup:</strong></td><td>${formatDate(booking.pickupDate)} at ${booking.pickupLocation}</td></tr>
-                        <tr><td><strong>Return:</strong></td><td>${formatDate(booking.returnDate)}</td></tr>
-                        <tr><td><strong>Deposit Proof:</strong></td><td>${booking.depositProofPath ? '✅ Uploaded' : '❌ Missing'}</td></tr>
-                        <tr><td><strong>Documents:</strong></td><td>${hasDocuments ? '✅ Attached as ZIP' : '❌ No documents uploaded'}</td></tr>
-                    </table>
-                </div>
-                
-                ${booking.additionalInfo ? `
-                <div style="background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 15px 0;">
-                    <strong>Special Requests:</strong><br/>
-                    ${booking.additionalInfo}
-                </div>
-                ` : ''}
-                
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee;">
-                    <p><strong>📅 Booking Received:</strong> ${formatDateTime(booking.bookingDate)}</p>
-                    <p><strong>🔒 Terms Accepted:</strong> ${booking.termsAccepted ? '✅ Yes' : '❌ No'}</p>
-                </div>
-            </div>
-            
-            <div class="footer">
-                <p>Vision Wan Services Booking System</p>
-                <p>Generated: ${new Date().toLocaleString()}</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    `;
-};
-const generateCustomerEmailTemplate = (booking) => {
-    return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-            .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
-            .header { background: #FF6B35; color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; }
-            .booking-details { background: #f7fafc; padding: 20px; border-radius: 5px; margin: 20px 0; }
-            .document-status { background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 20px 0; }
-            .footer { background: #edf2f7; padding: 15px; text-align: center; font-size: 12px; }
-            table { width: 100%; border-collapse: collapse; }
-            td { padding: 10px; border-bottom: 1px solid #ddd; }
-            .status-ok { color: #27ae60; }
-            .status-pending { color: #f39c12; }
-            .next-steps { background: #fff8e1; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>Vision Wan Services</h1>
-                <h2>Booking Confirmation</h2>
-            </div>
-            
-            <div class="content">
-                <p>Dear ${booking.customerName},</p>
-                <p>Thank you for booking with Vision Wan Services! Your reservation has been confirmed.</p>
-                
-                <div class="booking-details">
-                    <h3>Booking Summary</h3>
-                    <table>
-                        <tr><td><strong>Booking ID:</strong></td><td>${booking.id}</td></tr>
-                        <tr><td><strong>Car Type:</strong></td><td>${booking.carType}</td></tr>
-                        <tr><td><strong>Pickup Date:</strong></td><td>${formatDate(booking.pickupDate)}</td></tr>
-                        <tr><td><strong>Return Date:</strong></td><td>${formatDate(booking.returnDate)}</td></tr>
-                        <tr><td><strong>Pickup Location:</strong></td><td>${booking.pickupLocation || 'Main Office'}</td></tr>
-                        <tr><td><strong>${booking.idType === 'passport' ? 'Passport No:' : 'ID Number:'}</strong></td><td>${booking.idNumber}</td></tr>
-                    </table>
-                </div>
-                
-                <div class="document-status">
-                    <h3>Document Status</h3>
-                    <table>
-                        <tr>
-                            <td><strong>ID Document:</strong></td>
-                            <td>
-                                ${booking.idDocumentPath
-        ? '<span class="status-ok">✓ Uploaded</span>'
-        : '<span class="status-pending">⏳ Pending</span>'}
-                            </td>
-                        </tr>
-                        <tr>
-                            <td><strong>Driving License:</strong></td>
-                            <td>
-                                ${booking.drivingLicensePath
-        ? '<span class="status-ok">✓ Uploaded</span>'
-        : '<span class="status-pending">⏳ Pending</span>'}
-                            </td>
-                        </tr>
-                        <tr>
-                            <td><strong>Deposit Proof:</strong></td>
-                            <td>
-                                ${booking.depositProofPath
-        ? '<span class="status-ok">✓ Uploaded</span>'
-        : '<span class="status-pending">⏳ Pending</span>'}
-                            </td>
-                        </tr>
-                    </table>
-                </div>
-                
-                <div class="next-steps">
-                    <h4>📋 What's Next:</h4>
-                    <ol>
-                        <li>Your booking confirmation PDF is attached.</li>
-                        <li>All your uploaded documents are included in the ZIP file (if any).</li>
-                        <li>Please bring your original documents for verification at pickup.</li>
-                        <li>Present your deposit proof receipt when collecting the vehicle.</li>
-                        <li>Arrive 15 minutes before your scheduled pickup time.</li>
-                    </ol>
-                </div>
-                
-                <p><strong>Deposit Information:</strong><br/>
-                Your security deposit has been recorded. Please bring the proof of payment when picking up the vehicle.</p>
-                
-                <p>Safe travels,<br><strong>The Vision Wan Services Team</strong></p>
-            </div>
-            
-            <div class="footer">
-                <p><strong>Vision Wan Services</strong><br>
-                Kenya: +254 (705) 336 311 | UK: +44 (7397) 549 590<br>
-                Email: vision1servicesltd@gmail.com</p>
-                <p style="font-size: 11px; color: #666;">
-                    This email contains confidential information. If you received this email in error, please delete it immediately.
-                </p>
-                <p>© ${new Date().getFullYear()} Vision Wan Services. All rights reserved.</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    `;
-};
-/* -----------------------------
-   Resend Email Functions
---------------------------------*/
-const sendAdminNotification = async (booking, zipBuffer) => {
-    try {
-        if (!process.env.RESEND_API_KEY) {
-            throw new Error('RESEND_API_KEY is not configured');
-        }
-        const adminEmail = process.env.ADMIN_EMAIL || 'info.bluevisionrealtors@gmail.com';
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <bookings@visionwanservices.com>';
-        const attachments = [];
-        if (zipBuffer) {
-            attachments.push({
-                filename: `${booking.idNumber}_documents.zip`,
-                content: zipBuffer,
-            });
-        }
-        const { data, error } = await resend.emails.send({
-            from: fromEmail,
-            to: adminEmail,
-            subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})`,
-            html: generateAdminEmailTemplate(booking, !!zipBuffer),
-            attachments,
-        });
-        if (error) {
-            throw new Error(`Resend error: ${error.message}`);
-        }
-        console.log(`📧 Admin notification sent for booking ${booking.id}: ${data?.id}`);
-        return data;
-    }
-    catch (error) {
-        console.error('Failed to send admin notification:', error);
-        throw error;
-    }
-};
-const sendCustomerConfirmation = async (booking, zipBuffer) => {
-    try {
-        if (!process.env.RESEND_API_KEY) {
-            throw new Error('RESEND_API_KEY is not configured');
-        }
-        const fromEmail = process.env.RESEND_FROM_EMAIL || 'Vision Wan Services <bookings@visionwanservices.com>';
-        const pdfBuffer = await generateBookingPDF(booking);
-        const attachments = [
-            {
-                filename: `booking-confirmation-${booking.id}.pdf`,
-                content: pdfBuffer,
-            }
-        ];
-        if (zipBuffer) {
-            attachments.push({
-                filename: `${booking.idNumber}_your_documents.zip`,
-                content: zipBuffer,
-            });
-        }
-        const { data, error } = await resend.emails.send({
-            from: fromEmail,
-            to: booking.email,
-            subject: `✅ Booking Confirmed: ${booking.id} - Vision Wan Services`,
-            html: generateCustomerEmailTemplate(booking),
-            attachments,
-        });
-        if (error) {
-            throw new Error(`Resend error: ${error.message}`);
-        }
-        console.log(`✅ Confirmation email sent to ${booking.email}: ${data?.id}`);
-        return data;
-    }
-    catch (error) {
-        console.error('Failed to send customer confirmation:', error);
-        throw error;
-    }
-};
-/* -----------------------------
-   Create Booking
---------------------------------*/
-const createBooking = async (req, res) => {
-    try {
-        // Get files from multer
-        const files = req.files;
-        // Get form data
-        const bookingData = {
-            customerName: req.body.customerName,
-            email: req.body.email,
-            phone: req.body.phone,
-            pickupDate: req.body.pickupDate,
-            returnDate: req.body.returnDate,
-            carType: req.body.carType,
-            pickupLocation: req.body.pickupLocation,
-            dropoffLocation: req.body.dropoffLocation,
-            additionalInfo: req.body.additionalInfo,
-            idNumber: req.body.idNumber,
-            idType: req.body.idType,
-            termsAccepted: req.body.termsAccepted === 'true' || req.body.termsAccepted === true
-        };
-        // Validate essential fields
-        const requiredFields = [
-            'customerName', 'email', 'phone', 'pickupDate', 'returnDate',
-            'carType', 'pickupLocation', 'idNumber', 'idType'
-        ];
-        const missingFields = requiredFields.filter(field => !bookingData[field]);
-        if (missingFields.length > 0) {
-            return res.status(400).json({
-                success: false,
-                error: `Missing required fields: ${missingFields.join(', ')}`
-            });
-        }
-        if (!bookingData.termsAccepted) {
-            return res.status(400).json({
-                success: false,
-                error: 'Terms and conditions must be accepted'
-            });
-        }
-        // Generate booking ID
-        const bookingId = `V1-${Date.now().toString().slice(-8)}`;
-        const status = 'confirmed';
-        // Store file paths
-        const findFile = (name) => files?.[name]?.[0]?.path;
-        const bookingWithId = {
-            ...bookingData,
-            id: bookingId,
-            bookingDate: new Date().toISOString(),
-            status,
-            idDocumentPath: findFile('idDocument'),
-            drivingLicensePath: findFile('drivingLicense'),
-            depositProofPath: findFile('depositProof')
-        };
-        bookings.push(bookingWithId);
-        console.log(`📝 New booking created: ${bookingId} for ${bookingData.customerName}`);
-        console.log(`📁 Documents uploaded:`, {
-            idDocument: !!files.idDocument,
-            drivingLicense: !!files.drivingLicense,
-            depositProof: !!files.depositProof
-        });
-        // Respond immediately
-        res.status(201).json({
-            success: true,
-            message: 'Booking created successfully',
-            booking: {
-                id: bookingId,
-                customerName: bookingData.customerName,
-                email: bookingData.email,
-                phone: bookingData.phone,
-                pickupDate: formatDate(bookingData.pickupDate),
-                returnDate: formatDate(bookingData.returnDate),
-                carType: bookingData.carType,
-                pickupLocation: bookingData.pickupLocation,
-                idNumber: bookingData.idNumber,
-                idType: bookingData.idType,
-                status,
-                bookingDate: formatDateTime(bookingWithId.bookingDate),
-                hasDocuments: {
-                    idDocument: !!findFile('idDocument'),
-                    drivingLicense: !!findFile('drivingLicense'),
-                    depositProof: !!findFile('depositProof')
-                }
-            }
-        });
-        // Send emails in background (non-blocking)
-        setTimeout(async () => {
-            try {
-                // Create ZIP buffer
-                const zipBuffer = await createDocumentsZipBuffer(bookingWithId);
-                // Send both emails in parallel
-                await Promise.all([
-                    sendAdminNotification(bookingWithId, zipBuffer),
-                    sendCustomerConfirmation(bookingWithId, zipBuffer)
-                ]);
-                console.log(`✅ All emails sent for booking ${bookingId}`);
-            }
-            catch (emailError) {
-                console.error(`❌ Email sending failed for ${bookingId}:`, emailError);
-                // Log error but don't crash - emails can be resent later
-            }
-        }, 0);
-    }
-    catch (error) {
-        console.error('❌ Booking creation error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to create booking',
-            message: process.env.NODE_ENV === 'development' ? error.message : undefined
-        });
-    }
-};
-exports.createBooking = createBooking;
-/* -----------------------------
-   Resend Booking Confirmation (Manual Resend)
+   Resend Confirmation Function
 --------------------------------*/
 const sendBookingConfirmation = async (req, res) => {
     try {
@@ -507,101 +506,24 @@ const sendBookingConfirmation = async (req, res) => {
                 error: 'Booking not found'
             });
         }
-        // Create ZIP buffer
-        const zipBuffer = await createDocumentsZipBuffer(booking);
-        // Send confirmation using Resend
-        const result = await sendCustomerConfirmation(booking, zipBuffer);
+        const zipPath = await createDocumentsZip(booking);
+        await sendCustomerConfirmation(booking, zipPath);
+        // Clean up
+        if (zipPath && fs_1.default.existsSync(zipPath)) {
+            fs_1.default.unlinkSync(zipPath);
+        }
         res.json({
             success: true,
-            message: 'Confirmation email sent successfully',
-            emailId: result?.id
+            message: 'Confirmation email sent successfully'
         });
     }
     catch (error) {
         console.error('❌ Resend confirmation error:', error);
         res.status(500).json({
             success: false,
-            error: 'Failed to resend confirmation email',
-            message: process.env.NODE_ENV === 'development' ? error.message : undefined
+            error: 'Failed to resend confirmation email'
         });
     }
 };
 exports.sendBookingConfirmation = sendBookingConfirmation;
-/* -----------------------------
-   Get All Bookings (for admin)
---------------------------------*/
-const getAllBookings = async (req, res) => {
-    try {
-        res.json({
-            success: true,
-            count: bookings.length,
-            bookings: bookings.map(booking => ({
-                id: booking.id,
-                customerName: booking.customerName,
-                email: booking.email,
-                phone: booking.phone,
-                carType: booking.carType,
-                pickupDate: formatDate(booking.pickupDate),
-                returnDate: formatDate(booking.returnDate),
-                status: booking.status,
-                bookingDate: formatDateTime(booking.bookingDate)
-            }))
-        });
-    }
-    catch (error) {
-        console.error('❌ Get bookings error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to retrieve bookings'
-        });
-    }
-};
-exports.getAllBookings = getAllBookings;
-/* -----------------------------
-   Get Booking by ID
---------------------------------*/
-const getBookingById = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const booking = bookings.find(b => b.id === id);
-        if (!booking) {
-            return res.status(404).json({
-                success: false,
-                error: 'Booking not found'
-            });
-        }
-        res.json({
-            success: true,
-            booking: {
-                id: booking.id,
-                customerName: booking.customerName,
-                email: booking.email,
-                phone: booking.phone,
-                pickupDate: formatDate(booking.pickupDate),
-                returnDate: formatDate(booking.returnDate),
-                carType: booking.carType,
-                pickupLocation: booking.pickupLocation,
-                dropoffLocation: booking.dropoffLocation,
-                additionalInfo: booking.additionalInfo,
-                idNumber: booking.idNumber,
-                idType: booking.idType,
-                status: booking.status,
-                bookingDate: formatDateTime(booking.bookingDate),
-                hasDocuments: {
-                    idDocument: !!booking.idDocumentPath,
-                    drivingLicense: !!booking.drivingLicensePath,
-                    depositProof: !!booking.depositProofPath
-                }
-            }
-        });
-    }
-    catch (error) {
-        console.error('❌ Get booking error:', error);
-        res.status(500).json({
-            success: false,
-            error: 'Failed to retrieve booking'
-        });
-    }
-};
-exports.getBookingById = getBookingById;
 //# sourceMappingURL=bookingController.js.map
