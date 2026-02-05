@@ -1,3 +1,4 @@
+// src/controllers/contactController.ts
 import { Request, Response } from 'express';
 import nodemailer from 'nodemailer';
 
@@ -50,20 +51,21 @@ const departmentConfig = {
 
 // Email transporter configuration
 const createTransporter = () => {
+    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        throw new Error('Missing email configuration in environment variables');
+    }
+
     return nodemailer.createTransport({
-        host: 'smtp.office365.com', // Outlook/Office365 SMTP
-        port: 587,
-        secure: false, // Use STARTTLS
+        host: process.env.EMAIL_HOST,
+        port: parseInt(process.env.EMAIL_PORT || '587'),
+        secure: process.env.EMAIL_SECURE === 'true',
         auth: {
-            user: 'vision1servicesltd@outlook.com',
-            pass: '@VisionWan100%'
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
         },
-        connectionTimeout: 30000, // Increased timeout
-        greetingTimeout: 30000,
-        socketTimeout: 30000,
-        tls: {
-            ciphers: 'SSLv3' // Sometimes needed for Outlook
-        }
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
     });
 };
 
@@ -114,7 +116,7 @@ const generateAcknowledgementTemplate = (inquiry: ContactData, department: any):
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Vision Wan Services - Inquiry Received</title>
+        <title>Vision One - Inquiry Received</title>
         <style>
             body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
             .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
@@ -170,9 +172,9 @@ const generateAcknowledgementTemplate = (inquiry: ContactData, department: any):
             </div>
             
             <div class="footer">
-                <p>Vision One Car Hire Services Ltd<br>
+                <p>Vision One Services Ltd<br>
                 Executive Support: ${department.phone} | Email: ${department.email}</p>
-                <p>© ${new Date().getFullYear()} Vision One Car Hire. All rights reserved.</p>
+                <p>© ${new Date().getFullYear()} Vision One Services. All rights reserved.</p>
                 <p style="font-size: 10px; margin-top: 10px;">This is an automated message. Please do not reply to this email.</p>
             </div>
         </div>
