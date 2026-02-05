@@ -50,17 +50,13 @@ const departmentConfig = {
 
 // Email transporter configuration
 const createTransporter = () => {
-    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-        throw new Error('Missing email configuration in environment variables');
-    }
-
     return nodemailer.createTransport({
-        host: process.env.EMAIL_HOST,
-        port: parseInt(process.env.EMAIL_PORT || '587'),
-        secure: process.env.EMAIL_SECURE === 'true',
+        host: 'smtp.gmail.com', // Example: Gmail SMTP
+        port: 587,
+        secure: false, // true for 465, false for other ports
         auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS
+            user: 'info.bluevisionrealtors@gmail.com', // Your email
+            pass: 'wcsh bpzm bqzi warj' // Use App Password, not regular password
         },
         connectionTimeout: 10000,
         greetingTimeout: 10000,
