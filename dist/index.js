@@ -34,7 +34,6 @@ app.use((0, cors_1.default)({
     },
     credentials: true,
 }));
-app.options(/.*/, (0, cors_1.default)());
 /* -----------------------------
    Body parsers
 --------------------------------*/
