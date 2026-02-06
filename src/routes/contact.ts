@@ -56,12 +56,34 @@ const router = express.Router();
  *     responses:
  *       201:
  *         description: Inquiry submitted successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                 inquiry:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                     name:
+ *                       type: string
+ *                     email:
+ *                       type: string
+ *                     subject:
+ *                       type: string
+ *                     department:
+ *                       type: string
+ *                     priority:
+ *                       type: string
  *       400:
  *         description: Validation error
  *       500:
  *         description: Server error
  */
-router.post('/', contactController.createContactInquiry);
+router.post('/', contactController.createContactInquiry); // Changed from '/contact' to '/'
 
 /**
  * @swagger
@@ -93,7 +115,7 @@ router.post('/', contactController.createContactInquiry);
  *       200:
  *         description: List of inquiries
  */
-router.get('/', contactController.getContactInquiries);
+router.get('/', contactController.getContactInquiries); // Changed from '/contact/inquiries' to '/'
 
 /**
  * @swagger
@@ -105,7 +127,7 @@ router.get('/', contactController.getContactInquiries);
  *       200:
  *         description: Statistics about inquiries
  */
-router.get('/stats', contactController.getInquiryStats);
+router.get('/stats', contactController.getInquiryStats); // Changed from '/contact/stats' to '/stats'
 
 /**
  * @swagger
@@ -142,6 +164,6 @@ router.get('/stats', contactController.getInquiryStats);
  *       404:
  *         description: Inquiry not found
  */
-router.patch('/:id/status', contactController.updateInquiryStatus);
+router.patch('/:id/status', contactController.updateInquiryStatus); // Changed from '/contact/inquiries/:id/status' to '/:id/status'
 
 export default router;
