@@ -12,27 +12,51 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-
 /* -----------------------------
-   CORS Configuration
+   CORS Configuration - UPDATED
 --------------------------------*/
 const allowedOrigins = [
+    // Development origins
+    'http://localhost:3000',
+    'http://localhost:5173',      // ✅ Vite default port - ADD THIS
+    'http://localhost:5174',      // Vite alternative port
+    'http://127.0.0.1:5173',
+    'http://localhost:4173',      // Vite preview
     process.env.CLIENT_URL_LOCAL || 'http://localhost:3000',
+    
+    // Production origins
     process.env.CLIENT_URL_PROD || 'https://visiononecarhireservicesfrontend.onrender.com',
-    `http://localhost:${PORT}`, // allow Swagger testing
+    'https://visiononecarhireservicesfrontend.onrender.com',
+    
+    // API testing
+    `http://localhost:${PORT}`,
 ];
 
 app.use(cors({
     origin: (origin, callback) => {
-        if (!origin) return callback(null, true); // allow non-browser requests like Postman
-        if (allowedOrigins.includes(origin)) return callback(null, true);
-        console.warn('Blocked by CORS:', origin);
+        // Allow non-browser requests (Postman, curl, etc.)
+        if (!origin) return callback(null, true);
+        
+        // Allow any localhost origin for development
+        if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+            return callback(null, true);
+        }
+        
+        // Check against allowed origins
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        
+        console.warn('❌ Blocked by CORS:', origin);
         return callback(new Error('CORS not allowed'));
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 
-app.options(/.*/, cors());
+// Enable pre-flight requests for all routes
+app.options('*', cors());
 
 /* -----------------------------
    Body parsers
@@ -53,7 +77,7 @@ const swaggerOptions = {
         },
         servers: [{ url: `http://localhost:${PORT}` }],
     },
-    apis: ['./src/routes/*.ts'], // make sure your routes are here
+    apis: ['./src/routes/*.ts'],
 };
 
 const swaggerSpec = swaggerJsdoc(swaggerOptions);
@@ -66,10 +90,10 @@ app.get('/', (req, res) => res.redirect('/api/docs'));
 export const emailTransporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port: Number(process.env.EMAIL_PORT) || 465,
-    secure: process.env.EMAIL_SECURE === 'true', // true for 465, false for 587
+    secure: process.env.EMAIL_SECURE === 'true',
     auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS, // Gmail App Password
+        pass: process.env.EMAIL_PASS,
     },
 });
 
@@ -90,16 +114,13 @@ const safeDateTime = (value?: string | number | Date | null) => {
 
 const formatUptime = (seconds: number) => {
     if (!Number.isFinite(seconds)) return 'N/A';
-
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
-
     return `${mins}m ${secs}s`;
 };
 
 app.get('/api/health', (req: Request, res: Response) => {
     const uptimeSeconds = process.uptime();
-
     res.json({
         status: 'ok',
         timestamp: safeDateTime(new Date()),
