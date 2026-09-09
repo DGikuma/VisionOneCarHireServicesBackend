@@ -25,25 +25,25 @@ const contactInquiries: ContactData[] = [];
 const departmentConfig = {
     general: {
         name: 'Executive Office',
-        email: process.env.DEPARTMENT_GENERAL_EMAIL || 'vison1servicesltd@gmail.com',
+        email: process.env.DEPARTMENT_GENERAL_EMAIL || 'visionwanservices@gmail.com',
         phone: '+254 (705) 336 311',
         priority: 'normal'
     },
     booking: {
         name: 'Premium Reservations',
-        email: process.env.DEPARTMENT_BOOKING_EMAIL || 'vison1servicesltd@gmail.com',
+        email: process.env.DEPARTMENT_BOOKING_EMAIL || 'visionwanservices@gmail.com',
         phone: '+254 (705) 336 311',
         priority: 'normal'
     },
     corporate: {
         name: 'Corporate Services',
-        email: process.env.DEPARTMENT_CORPORATE_EMAIL || 'vison1servicesltd@gmail.com',
+        email: process.env.DEPARTMENT_CORPORATE_EMAIL || 'visionwanservices@gmail.com',
         phone: '+254 (705) 336 311',
         priority: 'high'
     },
     support: {
         name: 'Premium Support',
-        email: process.env.DEPARTMENT_SUPPORT_EMAIL || 'vison1servicesltd@gmail.com',
+        email: process.env.DEPARTMENT_SUPPORT_EMAIL || 'visionwanservices@gmail.com',
         phone: '+254 (705) 336 311',
         priority: 'urgent'
     }
@@ -109,152 +109,190 @@ const getEstimatedResponseTime = (priority: ContactData['priority']): string => 
 };
 
 // Email template generators
+// ======================== REPLACE THESE FUNCTIONS ========================
+
 const generateAcknowledgementTemplate = (inquiry: ContactData, department: any): string => {
-    return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Vision One - Inquiry Received</title>
-        <style>
-            body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-            .container { max-width: 600px; margin: 0 auto; background: #ffffff; }
-            .header { background: linear-gradient(135deg, #1a365d 0%, #2d3748 100%); color: white; padding: 30px; text-align: center; }
-            .content { padding: 30px; }
-            .inquiry-details { background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0; border-left: 4px solid #FF6B35; }
-            .priority { display: inline-block; padding: 5px 15px; border-radius: 20px; font-weight: bold; margin: 5px 0; font-size: 12px; }
-            .priority-urgent { background: #fee2e2; color: #dc2626; }
-            .priority-high { background: #fef3c7; color: #d97706; }
-            .priority-normal { background: #d1fae5; color: #059669; }
-            .footer { background: #edf2f7; padding: 20px; text-align: center; font-size: 12px; color: #6b7280; }
-            .message-box { background: #f1f5f9; padding: 15px; border-radius: 5px; margin: 15px 0; font-style: italic; }
-            .contact-info { background: #f0f9ff; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #0ea5e9; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>Vision One Executive Services</h1>
-                <h2>Inquiry Received</h2>
-            </div>
-            
-            <div class="content">
-                <p>Dear ${inquiry.name},</p>
-                
-                <p>Thank you for contacting Vision One Executive Services. Your inquiry has been received and is being processed by our ${department.name} team.</p>
-                
-                <div class="inquiry-details">
-                    <h3 style="margin-top: 0; color: #1a365d;">Inquiry Details:</h3>
-                    <p><strong>Reference ID:</strong> ${inquiry.id}</p>
-                    <p><strong>Subject:</strong> ${inquiry.subject}</p>
-                    <p><strong>Department:</strong> ${department.name}</p>
-                    <p><strong>Priority:</strong> <span class="priority priority-${inquiry.priority}">${inquiry.priority.toUpperCase()}</span></p>
-                    <p><strong>Estimated Response:</strong> ${getEstimatedResponseTime(inquiry.priority)}</p>
-                    ${inquiry.company ? `<p><strong>Company:</strong> ${inquiry.company}</p>` : ''}
-                    ${inquiry.phone ? `<p><strong>Phone:</strong> ${inquiry.phone}</p>` : ''}
-                </div>
-                
-                <p><strong>Your Message:</strong></p>
-                <div class="message-box">
-                    ${inquiry.message.replace(/\n/g, '<br>')}
-                </div>
-                
-                <div class="contact-info">
-                    <p><strong>Our ${department.name} team contact details:</strong></p>
-                    <ul style="margin: 10px 0; padding-left: 20px;">
-                        <li>Email: ${department.email}</li>
-                        <li>Phone: ${department.phone}</li>
-                    </ul>
-                </div>
-                
-                <p>Best regards,<br><strong>The Vision One Executive Team</strong></p>
-            </div>
-            
-            <div class="footer">
-                <p>Vision One Services Ltd<br>
-                Executive Support: ${department.phone} | Email: ${department.email}</p>
-                <p>© ${new Date().getFullYear()} Vision One Services. All rights reserved.</p>
-                <p style="font-size: 10px; margin-top: 10px;">This is an automated message. Please do not reply to this email.</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    `;
+  const primary = '#FF6B35';
+  const secondary = '#FF8B35';
+  const dark = '#1a1a2e';
+  const lightBg = '#f8f9fa';
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inquiry Received</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background: ${lightBg}; }
+    .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow: hidden; }
+    .header { background: linear-gradient(135deg, ${primary}, ${secondary}); padding: 30px 20px; text-align: center; }
+    .header h1 { color: #fff; margin: 0; font-size: 26px; }
+    .content { padding: 25px; }
+    .badge { display: inline-block; background: ${primary}; color: #fff; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+    .section { margin-bottom: 20px; }
+    .section-title { color: ${dark}; font-size: 18px; font-weight: 700; border-bottom: 3px solid ${primary}; padding-bottom: 6px; margin-bottom: 12px; }
+    .info-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; }
+    .info-label { color: #666; font-weight: 600; font-size: 14px; }
+    .info-value { color: ${dark}; font-weight: 500; font-size: 14px; text-align: right; }
+    .message-box { background: #f1f5f9; padding: 15px; border-radius: 6px; margin: 15px 0; font-style: italic; }
+    .footer { background: ${lightBg}; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #eee; }
+    .priority-urgent { background: #fee2e2; color: #dc2626; }
+    .priority-high { background: #fef3c7; color: #d97706; }
+    .priority-normal { background: #d1fae5; color: #059669; }
+    @media (max-width: 480px) {
+      .info-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+      .info-value { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📩 Inquiry Received</h1>
+      <p style="color: rgba(255,255,255,0.9); margin: 0;">We'll get back to you shortly</p>
+    </div>
+    <div class="content">
+      <div style="text-align: center; margin-bottom: 15px;">
+        <span class="badge">Reference: ${inquiry.id}</span>
+      </div>
+
+      <div class="section">
+        <div class="section-title">📋 Inquiry Details</div>
+        <div class="info-row"><span class="info-label">Subject</span><span class="info-value">${inquiry.subject}</span></div>
+        <div class="info-row"><span class="info-label">Department</span><span class="info-value">${department.name}</span></div>
+        <div class="info-row"><span class="info-label">Priority</span><span class="info-value"><span class="priority-${inquiry.priority}" style="padding: 2px 12px; border-radius: 12px; font-weight: 600;">${inquiry.priority.toUpperCase()}</span></span></div>
+        <div class="info-row"><span class="info-label">Estimated Response</span><span class="info-value">${getEstimatedResponseTime(inquiry.priority)}</span></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">👤 Your Information</div>
+        <div class="info-row"><span class="info-label">Name</span><span class="info-value">${inquiry.name}</span></div>
+        <div class="info-row"><span class="info-label">Email</span><span class="info-value">${inquiry.email}</span></div>
+        ${inquiry.phone ? `<div class="info-row"><span class="info-label">Phone</span><span class="info-value">${inquiry.phone}</span></div>` : ''}
+        ${inquiry.company ? `<div class="info-row"><span class="info-label">Company</span><span class="info-value">${inquiry.company}</span></div>` : ''}
+      </div>
+
+      <div class="section">
+        <div class="section-title">📝 Your Message</div>
+        <div class="message-box">${inquiry.message.replace(/\n/g, '<br>')}</div>
+      </div>
+
+      <div style="background: #f0f9ff; padding: 15px; border-radius: 6px; border-left: 4px solid #0ea5e9; margin: 20px 0;">
+        <p><strong>📌 Our team will contact you:</strong></p>
+        <ul style="margin: 8px 0 0; padding-left: 20px;">
+          <li>${department.name} — ${department.email}</li>
+          <li>Phone: ${department.phone}</li>
+        </ul>
+      </div>
+
+      <div style="text-align: center; margin: 20px 0;">
+        <a href="https://visionwanservices.com" style="display: inline-block; background: ${primary}; color: #fff; padding: 10px 25px; border-radius: 8px; text-decoration: none; font-weight: 600;">Visit Our Website</a>
+      </div>
+    </div>
+    <div class="footer">
+      <p>Vision One Services — Executive Support</p>
+      <p>© ${new Date().getFullYear()} Vision One Services. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
 };
 
 const generateInternalNotificationTemplate = (inquiry: ContactData, department: any): string => {
-    return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>New Contact Inquiry - ${inquiry.priority.toUpperCase()} Priority</title>
-        <style>
-            body { font-family: 'Arial', sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-            .container { max-width: 700px; margin: 0 auto; background: #ffffff; }
-            .header { background: linear-gradient(135deg, ${inquiry.priority === 'urgent' ? '#dc2626' : inquiry.priority === 'high' ? '#d97706' : '#059669'} 0%, ${inquiry.priority === 'urgent' ? '#ef4444' : inquiry.priority === 'high' ? '#f59e0b' : '#10b981'} 100%); color: white; padding: 25px; text-align: center; }
-            .content { padding: 25px; }
-            .alert-box { background: #fef3c7; border: 2px solid #f59e0b; padding: 15px; border-radius: 8px; margin: 15px 0; }
-            .customer-info { background: #f8fafc; padding: 15px; border-radius: 8px; margin: 15px 0; }
-            .action-required { background: #fee2e2; border-left: 4px solid #dc2626; padding: 15px; margin: 20px 0; }
-            .footer { background: #f1f5f9; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; }
-            .quick-actions { display: flex; gap: 10px; margin: 20px 0; }
-            .action-btn { flex: 1; padding: 10px; text-align: center; background: #3b82f6; color: white; text-decoration: none; border-radius: 5px; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>⚠️ NEW CONTACT INQUIRY</h1>
-                <h2>Priority: ${inquiry.priority.toUpperCase()}</h2>
-                <p>Department: ${department.name}</p>
-            </div>
-            
-            <div class="content">
-                <div class="alert-box">
-                    <p><strong>⚠️ Action Required:</strong> New inquiry assigned to ${department.name} team</p>
-                    <p><strong>Estimated Response Time:</strong> ${getEstimatedResponseTime(inquiry.priority)}</p>
-                </div>
-                
-                <div class="customer-info">
-                    <h3 style="margin-top: 0; color: #1a365d;">Customer Information:</h3>
-                    <p><strong>Name:</strong> ${inquiry.name}</p>
-                    <p><strong>Email:</strong> <a href="mailto:${inquiry.email}">${inquiry.email}</a></p>
-                    ${inquiry.phone ? `<p><strong>Phone:</strong> <a href="tel:${inquiry.phone}">${inquiry.phone}</a></p>` : ''}
-                    ${inquiry.company ? `<p><strong>Company:</strong> ${inquiry.company}</p>` : ''}
-                </div>
-                
-                <h3>Inquiry Details:</h3>
-                <p><strong>Reference ID:</strong> ${inquiry.id}</p>
-                <p><strong>Subject:</strong> ${inquiry.subject}</p>
-                <p><strong>Department:</strong> ${department.name}</p>
-                <p><strong>Submitted:</strong> ${new Date(inquiry.submissionDate).toLocaleString()}</p>
-                <p><strong>Assigned To:</strong> ${inquiry.assignedTo}</p>
-                
-                <div class="action-required">
-                    <h3 style="margin-top: 0; color: #dc2626;">📝 Customer Message:</h3>
-                    <p>${inquiry.message.replace(/\n/g, '<br>')}</p>
-                </div>
-                
-                <div class="quick-actions">
-                    <a href="mailto:${inquiry.email}?subject=Re: ${encodeURIComponent(inquiry.subject)}" class="action-btn">Reply to Customer</a>
-                    ${inquiry.phone ? `<a href="tel:${inquiry.phone}" class="action-btn">Call Customer</a>` : ''}
-                    <a href="mailto:${department.email}" class="action-btn">Internal Discussion</a>
-                </div>
-                
-                <p><em>This inquiry requires a response within the estimated time frame.</em></p>
-            </div>
-            
-            <div class="footer">
-                <p>Vision One Contact Management System</p>
-                <p>Generated: ${new Date().toLocaleString()}</p>
-            </div>
-        </div>
-    </body>
-    </html>
-    `;
+  const primary = '#FF6B35';
+  const secondary = '#FF8B35';
+  const dark = '#1a1a2e';
+  const lightBg = '#f8f9fa';
+
+  const priorityColor = {
+    urgent: '#dc2626',
+    high: '#d97706',
+    normal: '#059669',
+    low: '#6b7280'
+  }[inquiry.priority] || '#6b7280';
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Inquiry - ${inquiry.priority.toUpperCase()}</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background: ${lightBg}; }
+    .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow: hidden; }
+    .header { background: ${priorityColor}; padding: 25px; text-align: center; }
+    .header h1 { color: #fff; margin: 0; font-size: 24px; }
+    .content { padding: 25px; }
+    .badge { display: inline-block; background: ${primary}; color: #fff; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+    .section { margin-bottom: 20px; }
+    .section-title { color: ${dark}; font-size: 18px; font-weight: 700; border-bottom: 2px solid ${primary}; padding-bottom: 6px; margin-bottom: 12px; }
+    .info-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; }
+    .info-label { color: #666; font-weight: 600; font-size: 14px; }
+    .info-value { color: ${dark}; font-weight: 500; font-size: 14px; text-align: right; }
+    .message-box { background: #f1f5f9; padding: 15px; border-radius: 6px; margin: 15px 0; }
+    .alert-box { background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 4px; margin: 20px 0; }
+    .footer { background: ${lightBg}; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #eee; }
+    .action-btn { display: inline-block; background: ${primary}; color: #fff; padding: 8px 20px; border-radius: 6px; text-decoration: none; font-weight: 600; margin: 5px; }
+    @media (max-width: 480px) {
+      .info-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+      .info-value { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>⚠️ NEW INQUIRY</h1>
+      <p style="color: rgba(255,255,255,0.9); margin: 0;">Priority: ${inquiry.priority.toUpperCase()}</p>
+    </div>
+    <div class="content">
+      <div style="text-align: center; margin-bottom: 15px;">
+        <span class="badge">${inquiry.id}</span>
+      </div>
+
+      <div class="alert-box">
+        <p><strong>Action Required:</strong> New inquiry assigned to ${department.name} team</p>
+        <p>Estimated Response: ${getEstimatedResponseTime(inquiry.priority)}</p>
+      </div>
+
+      <div class="section">
+        <div class="section-title">👤 Customer</div>
+        <div class="info-row"><span class="info-label">Name</span><span class="info-value">${inquiry.name}</span></div>
+        <div class="info-row"><span class="info-label">Email</span><span class="info-value">${inquiry.email}</span></div>
+        ${inquiry.phone ? `<div class="info-row"><span class="info-label">Phone</span><span class="info-value">${inquiry.phone}</span></div>` : ''}
+        ${inquiry.company ? `<div class="info-row"><span class="info-label">Company</span><span class="info-value">${inquiry.company}</span></div>` : ''}
+      </div>
+
+      <div class="section">
+        <div class="section-title">📋 Inquiry</div>
+        <div class="info-row"><span class="info-label">Subject</span><span class="info-value">${inquiry.subject}</span></div>
+        <div class="info-row"><span class="info-label">Department</span><span class="info-value">${department.name}</span></div>
+        <div class="info-row"><span class="info-label">Assigned To</span><span class="info-value">${inquiry.assignedTo}</span></div>
+        <div class="info-row"><span class="info-label">Submitted</span><span class="info-value">${new Date(inquiry.submissionDate).toLocaleString()}</span></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">📝 Message</div>
+        <div class="message-box">${inquiry.message.replace(/\n/g, '<br>')}</div>
+      </div>
+
+      <div style="text-align: center; margin: 20px 0;">
+        <a href="mailto:${inquiry.email}?subject=Re: ${encodeURIComponent(inquiry.subject)}" class="action-btn">Reply</a>
+        ${inquiry.phone ? `<a href="tel:${inquiry.phone}" class="action-btn">Call</a>` : ''}
+        <a href="mailto:${department.email}" class="action-btn">Internal Chat</a>
+      </div>
+    </div>
+    <div class="footer">
+      <p>Vision One Contact System — Generated ${new Date().toLocaleString()}</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
 };
 
 // Email sending functions

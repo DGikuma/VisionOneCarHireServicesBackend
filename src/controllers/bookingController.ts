@@ -226,101 +226,6 @@ export const createBooking = async (req: Request, res: Response) => {
     }
 };
 
-/* -----------------------------
-   Email Helpers (Updated)
---------------------------------*/
-const sendAdminNotification = async (booking: BookingData, zipPath: string | null) => {
-    const transporter = createTransporter();
-
-    const attachments = [];
-    if (zipPath && fs.existsSync(zipPath)) {
-        attachments.push({
-            filename: `${booking.idNumber}_documents.zip`,
-            path: zipPath,
-            contentType: 'application/zip'
-        });
-    }
-
-    const mailOptions = {
-        from: process.env.EMAIL_FROM || '"Vision One Services" <info.bluevisionrealtors@gmail.com>',
-        to: process.env.ADMIN_EMAIL || 'info.bluevisionrealtors@gmail.com',
-        subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})`,
-        html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-                <h2 style="color: #FF6B35;">🚗 NEW CAR BOOKING REQUEST</h2>
-                <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                    <h3 style="color: #333; border-bottom: 2px solid #FF6B35; padding-bottom: 10px;">Booking Details</h3>
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Booking ID:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.id}</td></tr>
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Customer:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.customerName}</td></tr>
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>${booking.idType === 'passport' ? 'Passport No:' : 'ID Number:'}</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.idNumber}</td></tr>
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Email:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.email}</td></tr>
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Phone:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.phone || 'N/A'}</td></tr>
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Vehicle:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.carType}</td></tr>
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Pickup:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${formatDate(booking.pickupDate)} at ${booking.pickupLocation}</td></tr>
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Return:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${formatDate(booking.returnDate)}</td></tr>
-                        <tr><td style="padding: 8px; border-bottom: 1px solid #eee;"><strong>Deposit Proof:</strong></td><td style="padding: 8px; border-bottom: 1px solid #eee;">${booking.depositProofPath ? '✅ Uploaded' : '❌ Missing'}</td></tr>
-                        <tr><td style="padding: 8px;"><strong>Documents:</strong></td><td style="padding: 8px;">${attachments.length > 0 ? '✅ Attached as ZIP' : '❌ No documents'}</td></tr>
-                    </table>
-                </div>
-                
-                ${booking.additionalInfo ? `
-                <div style="background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 15px 0;">
-                    <strong>Special Requests:</strong><br/>
-                    ${booking.additionalInfo}
-                </div>
-                ` : ''}
-                
-                <div style="margin-top: 30px; padding-top: 20px; border-top: 2px solid #eee;">
-                    <p><strong>📅 Booking Received:</strong> ${formatDateTime(booking.bookingDate)}</p>
-                    <p><strong>🔒 Terms Accepted:</strong> ${booking.termsAccepted ? '✅ Yes' : '❌ No'}</p>
-                </div>
-                
-                <div style="background: #FF6B35; color: white; padding: 15px; border-radius: 5px; margin-top: 20px; text-align: center;">
-                    <p style="margin: 0; font-weight: bold;">ACTION REQUIRED: Process security deposit and verify documents</p>
-                </div>
-            </div>
-        `,
-        attachments
-    };
-
-    await transporter.sendMail(mailOptions);
-    console.log(`📧 Admin notification sent for booking ${booking.id}`);
-};
-
-const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | null) => {
-    const transporter = createTransporter();
-    const pdfBuffer = await generateBookingPDF(booking);
-
-    const attachments: any[] = [
-        {
-            filename: `booking-confirmation-${booking.id}.pdf`,
-            content: pdfBuffer,
-            contentType: 'application/pdf'
-        }
-    ];
-
-    // Add documents ZIP if available
-    if (zipPath && fs.existsSync(zipPath)) {
-        attachments.push({
-            filename: `${booking.idNumber}_your_documents.zip`,
-            path: zipPath,
-            contentType: 'application/zip'
-        });
-    }
-
-    const mailOptions = {
-        from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
-        to: booking.email,
-        subject: `✅ Booking Confirmed: ${booking.id} - Vision One Services`,
-        html: generateEmailTemplate(booking),
-        attachments
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Confirmation email sent to ${booking.email}: ${info.messageId}`);
-    return info;
-};
 
 /* -----------------------------
    Enhanced PDF Generation
@@ -396,95 +301,268 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
 /* -----------------------------
    Enhanced Email Template
 --------------------------------*/
+// ======================== REPLACE THESE FUNCTIONS ========================
+
+/* -----------------------------
+   Enhanced Email Template (Customer)
+--------------------------------*/
 const generateEmailTemplate = (booking: BookingData): string => {
-    return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-        .header { background: #FF6B35; color: white; padding: 20px; text-align: center; }
-        .content { padding: 20px; }
-        .booking-details { background: #f7fafc; padding: 20px; border-radius: 5px; margin: 20px 0; }
-        .document-status { background: #e8f4fd; padding: 15px; border-radius: 5px; margin: 20px 0; }
-        .footer { background: #edf2f7; padding: 15px; text-align: center; font-size: 12px; }
-        table { width: 100%; border-collapse: collapse; }
-        td { padding: 10px; border-bottom: 1px solid #ddd; }
-        .status-ok { color: green; }
-        .status-pending { color: orange; }
-      </style>
-    </head>
-    <body>
-      <div class="header">
-        <h1>Vision One Services</h1>
-        <h2>Booking Confirmation</h2>
+  const primary = '#FF6B35';
+  const secondary = '#FF8B35';
+  const dark = '#1a1a2e';
+  const lightBg = '#f8f9fa';
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Booking Confirmation</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background-color: ${lightBg}; }
+    .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow: hidden; }
+    .header { background: linear-gradient(135deg, ${primary}, ${secondary}); padding: 30px 20px; text-align: center; }
+    .header h1 { color: #fff; margin: 0; font-size: 28px; font-weight: 700; }
+    .header p { color: rgba(255,255,255,0.9); margin: 8px 0 0; font-size: 16px; }
+    .content { padding: 30px 25px; }
+    .badge { display: inline-block; background: ${primary}; color: #fff; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+    .section { margin-bottom: 24px; }
+    .section-title { color: ${dark}; font-size: 18px; font-weight: 700; border-bottom: 3px solid ${primary}; padding-bottom: 8px; margin-bottom: 16px; }
+    .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #eee; }
+    .info-label { color: #666; font-weight: 600; font-size: 14px; }
+    .info-value { color: ${dark}; font-weight: 500; font-size: 14px; text-align: right; }
+    .highlight-box { background: ${lightBg}; border-left: 4px solid ${primary}; padding: 12px 16px; border-radius: 4px; margin: 16px 0; }
+    .highlight-box p { margin: 0; color: #444; font-size: 14px; }
+    .status-ok { color: #10b981; font-weight: 600; }
+    .status-pending { color: #f59e0b; font-weight: 600; }
+    .btn { display: inline-block; background: linear-gradient(135deg, ${primary}, ${secondary}); color: #fff; padding: 12px 30px; border-radius: 8px; text-decoration: none; font-weight: 600; margin-top: 10px; }
+    .footer { text-align: center; padding: 20px; background: ${lightBg}; color: #888; font-size: 13px; border-top: 1px solid #eee; }
+    .footer a { color: ${primary}; text-decoration: none; }
+    @media (max-width: 480px) {
+      .info-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+      .info-value { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚗 Booking Confirmed</h1>
+      <p>Thank you for choosing Vision One Services</p>
+    </div>
+    <div class="content">
+      <div style="text-align: center; margin-bottom: 20px;">
+        <span class="badge">Booking #${booking.id}</span>
       </div>
-      <div class="content">
-        <p>Dear ${booking.customerName},</p>
-        <p>Thank you for booking with Vision One Services! Your reservation has been confirmed.</p>
-        
-        <div class="booking-details">
-          <h3>Booking Summary</h3>
-          <table>
-            <tr><td><strong>Booking ID:</strong></td><td>${booking.id}</td></tr>
-            <tr><td><strong>Car Type:</strong></td><td>${booking.carType}</td></tr>
-            <tr><td><strong>Pickup Date:</strong></td><td>${formatDate(booking.pickupDate)}</td></tr>
-            <tr><td><strong>Return Date:</strong></td><td>${formatDate(booking.returnDate)}</td></tr>
-            <tr><td><strong>Pickup Location:</strong></td><td>${booking.pickupLocation || 'Main Office'}</td></tr>
-            <tr><td><strong>${booking.idType === 'passport' ? 'Passport No:' : 'ID Number:'}</strong></td><td>${booking.idNumber}</td></tr>
-          </table>
-        </div>
-        
-        <div class="document-status">
-          <h3>Document Status</h3>
-          <table>
-            <tr>
-            <td><strong>ID Document:</strong></td>
-            <td>
-                ${booking.idDocumentPath
-            ? '<span class="status-ok">✓ Uploaded</span>'
-            : '<span class="status-pending">⏳ Pending</span>'}
-            </td>
-            </tr>
-            <tr>
-            <td><strong>Driving License:</strong></td>
-            <td>
-                ${booking.drivingLicensePath
-            ? '<span class="status-ok">✓ Uploaded</span>'
-            : '<span class="status-pending">⏳ Pending</span>'}
-            </td>
-            </tr>
-            <tr><td><strong>Deposit Proof:</strong></td><td>${booking.depositProofPath ? '<span class="status-ok">✓ Uploaded</span>' : '<span class="status-pending">⏳ Pending</span>'}</td></tr>
-          </table>
-        </div>
-        
-        <div style="background: #fff8e1; padding: 15px; border-radius: 5px; margin: 20px 0;">
-          <h4>📋 What's Next:</h4>
-          <ol>
-            <li>Your booking confirmation PDF is attached.</li>
-            <li>All your uploaded documents are included in the ZIP file.</li>
-            <li>Please bring your original documents for verification at pickup.</li>
-            <li>Present your deposit proof receipt when collecting the vehicle.</li>
-          </ol>
-        </div>
-        
-        <p><strong>Deposit Information:</strong><br/>
-        Your security deposit has been recorded. Please bring the proof of payment when picking up the vehicle.</p>
-        
-        <p>Safe travels,<br>The Vision One Service Team</p>
+
+      <div class="section">
+        <div class="section-title">📋 Reservation Details</div>
+        <div class="info-row"><span class="info-label">Vehicle</span><span class="info-value">${booking.carType}</span></div>
+        <div class="info-row"><span class="info-label">Pickup Location</span><span class="info-value">${booking.pickupLocation || 'Main Office'}</span></div>
+        ${booking.dropoffLocation ? `<div class="info-row"><span class="info-label">Return Location</span><span class="info-value">${booking.dropoffLocation}</span></div>` : ''}
+        <div class="info-row"><span class="info-label">Pickup Date</span><span class="info-value">${formatDate(booking.pickupDate)}</span></div>
+        <div class="info-row"><span class="info-label">Return Date</span><span class="info-value">${formatDate(booking.returnDate)}</span></div>
       </div>
-      <div class="footer">
-        <p><strong>Vision One Services</strong><br>
-        Kenya: +254 (705) 336 311 | UK: +44 (7397) 549 590<br>
-        Email: vison1servicesltd@gmail.com</p>
-        <p style="font-size: 11px; color: #666;">
-          This email contains confidential information. If you received this email in error, please delete it immediately.
-        </p>
-        <p>© ${new Date().getFullYear()} Vision One. All rights reserved.</p>
+
+      <div class="section">
+        <div class="section-title">👤 Client Information</div>
+        <div class="info-row"><span class="info-label">Name</span><span class="info-value">${booking.customerName}</span></div>
+        <div class="info-row"><span class="info-label">Email</span><span class="info-value">${booking.email}</span></div>
+        <div class="info-row"><span class="info-label">Phone</span><span class="info-value">${booking.phone || 'N/A'}</span></div>
+        <div class="info-row"><span class="info-label">${booking.idType === 'passport' ? 'Passport No' : 'ID Number'}</span><span class="info-value">${booking.idNumber}</span></div>
       </div>
-    </body>
-    </html>
-    `;
+
+      <div class="section">
+        <div class="section-title">📎 Document Status</div>
+        <div class="info-row"><span class="info-label">ID Document</span><span class="info-value ${booking.idDocumentPath ? 'status-ok' : 'status-pending'}">${booking.idDocumentPath ? '✅ Uploaded' : '⏳ Pending'}</span></div>
+        <div class="info-row"><span class="info-label">Driving License</span><span class="info-value ${booking.drivingLicensePath ? 'status-ok' : 'status-pending'}">${booking.drivingLicensePath ? '✅ Uploaded' : '⏳ Pending'}</span></div>
+        <div class="info-row"><span class="info-label">Deposit Proof</span><span class="info-value ${booking.depositProofPath ? 'status-ok' : 'status-pending'}">${booking.depositProofPath ? '✅ Uploaded' : '⏳ Pending'}</span></div>
+      </div>
+
+      ${booking.additionalInfo ? `
+      <div class="section">
+        <div class="section-title">📝 Additional Notes</div>
+        <div class="highlight-box"><p>${booking.additionalInfo}</p></div>
+      </div>` : ''}
+
+      <div class="highlight-box" style="margin-top: 20px;">
+        <p><strong>📌 What's Next?</strong></p>
+        <ul style="margin: 8px 0 0; padding-left: 20px;">
+          <li>You'll receive a confirmation call within 24 hours.</li>
+          <li>Bring your original ID and driving license for verification.</li>
+          <li>Keep this email and the attached PDF for your records.</li>
+        </ul>
+      </div>
+
+      <div style="text-align: center; margin: 30px 0 10px;">
+        <a href="https://visionwanservices.com" class="btn">Visit Our Website</a>
+      </div>
+    </div>
+    <div class="footer">
+      <p><strong>Vision One Services</strong><br>
+      Kenya: +254 (705) 336 311 | UK: +44 (7397) 549 590<br>
+      Email: visionwanservices@gmail.com</p>
+      <p style="font-size: 12px; color: #aaa;">© ${new Date().getFullYear()} Vision One Services. All rights reserved.</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+};
+
+/* -----------------------------
+   Enhanced Admin Notification
+--------------------------------*/
+const sendAdminNotification = async (booking: BookingData, zipPath: string | null) => {
+  const transporter = createTransporter();
+
+  const attachments = [];
+  if (zipPath && fs.existsSync(zipPath)) {
+    attachments.push({
+      filename: `${booking.idNumber}_documents.zip`,
+      path: zipPath,
+      contentType: 'application/zip'
+    });
+  }
+
+  const primary = '#FF6B35';
+  const secondary = '#FF8B35';
+  const dark = '#1a1a2e';
+  const lightBg = '#f8f9fa';
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Booking</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background: ${lightBg}; }
+    .container { max-width: 600px; margin: 20px auto; background: #fff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow: hidden; }
+    .header { background: linear-gradient(135deg, ${primary}, ${secondary}); padding: 25px; text-align: center; }
+    .header h1 { color: #fff; margin: 0; font-size: 26px; }
+    .content { padding: 25px; }
+    .badge { display: inline-block; background: #dc2626; color: #fff; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+    .section { margin-bottom: 20px; }
+    .section-title { color: ${dark}; font-size: 18px; font-weight: 700; border-bottom: 2px solid ${primary}; padding-bottom: 6px; margin-bottom: 12px; }
+    .info-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; }
+    .info-label { color: #666; font-weight: 600; font-size: 14px; }
+    .info-value { color: ${dark}; font-weight: 500; font-size: 14px; text-align: right; }
+    .alert-box { background: #fee2e2; border-left: 4px solid #dc2626; padding: 15px; border-radius: 4px; margin: 20px 0; }
+    .footer { background: ${lightBg}; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #eee; }
+    @media (max-width: 480px) {
+      .info-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+      .info-value { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📋 NEW BOOKING REQUEST</h1>
+      <p style="color: rgba(255,255,255,0.9); margin: 0;">Action Required</p>
+    </div>
+    <div class="content">
+      <div style="text-align: center; margin-bottom: 15px;">
+        <span class="badge">${booking.id}</span>
+      </div>
+
+      <div class="section">
+        <div class="section-title">👤 Customer</div>
+        <div class="info-row"><span class="info-label">Name</span><span class="info-value">${booking.customerName}</span></div>
+        <div class="info-row"><span class="info-label">Email</span><span class="info-value">${booking.email}</span></div>
+        <div class="info-row"><span class="info-label">Phone</span><span class="info-value">${booking.phone || 'N/A'}</span></div>
+        <div class="info-row"><span class="info-label">${booking.idType === 'passport' ? 'Passport No' : 'ID Number'}</span><span class="info-value">${booking.idNumber}</span></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">🚗 Booking</div>
+        <div class="info-row"><span class="info-label">Vehicle</span><span class="info-value">${booking.carType}</span></div>
+        <div class="info-row"><span class="info-label">Pickup</span><span class="info-value">${formatDate(booking.pickupDate)} at ${booking.pickupLocation || 'Main Office'}</span></div>
+        <div class="info-row"><span class="info-label">Return</span><span class="info-value">${formatDate(booking.returnDate)}</span></div>
+        ${booking.dropoffLocation ? `<div class="info-row"><span class="info-label">Drop-off</span><span class="info-value">${booking.dropoffLocation}</span></div>` : ''}
+      </div>
+
+      <div class="section">
+        <div class="section-title">📎 Documents</div>
+        <div class="info-row"><span class="info-label">ID Document</span><span class="info-value">${booking.idDocumentPath ? '✅ Uploaded' : '❌ Missing'}</span></div>
+        <div class="info-row"><span class="info-label">Driving License</span><span class="info-value">${booking.drivingLicensePath ? '✅ Uploaded' : '❌ Missing'}</span></div>
+        <div class="info-row"><span class="info-label">Deposit Proof</span><span class="info-value">${booking.depositProofPath ? '✅ Uploaded' : '❌ Missing'}</span></div>
+        <div class="info-row"><span class="info-label">ZIP Attached</span><span class="info-value">${attachments.length > 0 ? '✅ Yes' : '❌ No'}</span></div>
+      </div>
+
+      ${booking.additionalInfo ? `
+      <div class="section">
+        <div class="section-title">📝 Notes</div>
+        <div style="background: #f1f5f9; padding: 12px; border-radius: 4px;">${booking.additionalInfo}</div>
+      </div>` : ''}
+
+      <div class="alert-box">
+        <p><strong>⚠️ ACTION REQUIRED</strong></p>
+        <p style="margin: 0;">Verify identity documents, process security deposit, and confirm vehicle availability.</p>
+      </div>
+
+      <div style="text-align: center; margin: 20px 0;">
+        <a href="mailto:${booking.email}?subject=Re: Booking ${booking.id}" style="display: inline-block; background: ${primary}; color: #fff; padding: 10px 25px; border-radius: 8px; text-decoration: none; font-weight: 600;">Reply to Customer</a>
+      </div>
+    </div>
+    <div class="footer">
+      <p>Vision One Services — Booking Management System</p>
+      <p>Received: ${formatDateTime(booking.bookingDate)}</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
+    to: process.env.ADMIN_EMAIL || 'visionwanservices@gmail.com',
+    subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})`,
+    html,
+    attachments
+  };
+
+  await transporter.sendMail(mailOptions);
+  console.log(`📧 Admin notification sent for booking ${booking.id}`);
+};
+
+/* -----------------------------
+   Enhanced Customer Confirmation
+--------------------------------*/
+const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | null) => {
+  const transporter = createTransporter();
+  const pdfBuffer = await generateBookingPDF(booking);
+
+  const attachments: any[] = [
+    {
+      filename: `booking-confirmation-${booking.id}.pdf`,
+      content: pdfBuffer,
+      contentType: 'application/pdf'
+    }
+  ];
+
+  if (zipPath && fs.existsSync(zipPath)) {
+    attachments.push({
+      filename: `${booking.idNumber}_your_documents.zip`,
+      path: zipPath,
+      contentType: 'application/zip'
+    });
+  }
+
+  const mailOptions = {
+    from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
+    to: booking.email,
+    subject: `✅ Booking Confirmed: ${booking.id} - Vision One Services`,
+    html: generateEmailTemplate(booking),
+    attachments
+  };
+
+  const info = await transporter.sendMail(mailOptions);
+  console.log(`✅ Confirmation email sent to ${booking.email}: ${info.messageId}`);
+  return info;
 };
 
 // Keep existing sendBookingConfirmation function as is
