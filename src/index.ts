@@ -1,17 +1,17 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import swaggerUi from 'swagger-ui-express';
+import swaggerJsdoc from 'swagger-jsdoc';
 import bookingRoutes from './routes/bookings';
 import contactRoutes from './routes/contact';
 import nodemailer from 'nodemailer';
-
-const swaggerUi = require('swagger-ui-express');
-const swaggerJsdoc = require('swagger-jsdoc');
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
 
 /* -----------------------------
    CORS Configuration

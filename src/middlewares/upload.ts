@@ -1,6 +1,7 @@
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { Request } from 'express';
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(__dirname, '../uploads');
@@ -10,12 +11,12 @@ if (!fs.existsSync(uploadsDir)) {
 
 // Configure storage
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
+    destination: (req: Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {
         cb(null, uploadsDir);
     },
-    filename: (req, file, cb) => {
+    filename: (req: Request, file: Express.Multer.File, cb: (error: Error | null, filename: string) => void) => {
         // Get ID number from request body
-        const idNumber = req.body.idNumber || 'unknown';
+        const idNumber = (req.body as any).idNumber || 'unknown';
         const timestamp = Date.now();
         const originalName = file.originalname;
         const ext = path.extname(originalName);
@@ -28,7 +29,7 @@ const storage = multer.diskStorage({
 });
 
 // File filter
-const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
+const fileFilter = (req: Request, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
     const allowedTypes = /jpeg|jpg|png|pdf/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);

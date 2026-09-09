@@ -4,8 +4,133 @@ import { upload } from '../middlewares/upload';
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * tags:
+ *   name: Bookings
+ *   description: Booking management and vehicle reservations
+ */
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     Booking:
+ *       type: object
+ *       required:
+ *         - customerName
+ *         - email
+ *         - phone
+ *         - pickupDate
+ *         - returnDate
+ *         - carType
+ *         - pickupLocation
+ *         - idNumber
+ *         - idType
+ *         - termsAccepted
+ *       properties:
+ *         customerName:
+ *           type: string
+ *           example: "John Doe"
+ *           description: Full name of the customer
+ *         email:
+ *           type: string
+ *           format: email
+ *           example: "john@example.com"
+ *           description: Customer's email address
+ *         phone:
+ *           type: string
+ *           example: "+254712345678"
+ *           description: Customer's phone number
+ *         pickupDate:
+ *           type: string
+ *           format: date
+ *           example: "2026-09-15"
+ *           description: Date of vehicle pickup
+ *         returnDate:
+ *           type: string
+ *           format: date
+ *           example: "2026-09-20"
+ *           description: Date of vehicle return
+ *         carType:
+ *           type: string
+ *           example: "Toyota Prado"
+ *           description: Type of car requested
+ *         pickupLocation:
+ *           type: string
+ *           example: "Nairobi CBD"
+ *           description: Location where customer will pick up the vehicle
+ *         dropoffLocation:
+ *           type: string
+ *           example: "Mombasa"
+ *           description: Location where customer will return the vehicle (optional)
+ *         additionalInfo:
+ *           type: string
+ *           example: "Need baby seat"
+ *           description: Additional requests or information (optional)
+ *         idNumber:
+ *           type: string
+ *           example: "12345678"
+ *           description: ID or Passport number
+ *         idType:
+ *           type: string
+ *           enum: [id, passport]
+ *           example: "id"
+ *           description: Type of identification document
+ *         termsAccepted:
+ *           type: boolean
+ *           example: true
+ *           description: Must be true to proceed with booking
+ *     FileUpload:
+ *       type: object
+ *       properties:
+ *         idDocument:
+ *           type: string
+ *           format: binary
+ *           description: ID card or passport image (PDF, JPG, PNG)
+ *         drivingLicense:
+ *           type: string
+ *           format: binary
+ *           description: Driving license image (PDF, JPG, PNG)
+ *         depositProof:
+ *           type: string
+ *           format: binary
+ *           description: Proof of deposit payment (PDF, JPG, PNG)
+ *     BookingResponse:
+ *       type: object
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           example: true
+ *         message:
+ *           type: string
+ *           example: "Booking created successfully"
+ *         bookingId:
+ *           type: string
+ *           example: "123e4567-e89b-12d3-a456-426614174000"
+ *         booking:
+ *           $ref: '#/components/schemas/Booking'
+ *     ErrorResponse:
+ *       type: object
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           example: false
+ *         message:
+ *           type: string
+ *         errors:
+ *           type: array
+ *           items:
+ *             type: object
+ *             properties:
+ *               field:
+ *                 type: string
+ *               message:
+ *                 type: string
+ */
+
 /* -----------------------------
-   Custom validation middleware (Updated)
+   Custom validation middleware
 --------------------------------*/
 const validateBooking = (req: Request, res: Response, next: NextFunction) => {
     const {
@@ -58,12 +183,10 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
     req.body.idNumber = idNumber.trim();
     req.body.termsAccepted = termsAccepted === 'true' || termsAccepted === true;
 
-    // Handle dropoffLocation if provided
     if (req.body.dropoffLocation) {
         req.body.dropoffLocation = req.body.dropoffLocation.trim();
     }
 
-    // Handle additionalInfo if provided
     if (req.body.additionalInfo) {
         req.body.additionalInfo = req.body.additionalInfo.trim();
     }
@@ -72,82 +195,15 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
 };
 
 /* -----------------------------
-   Swagger update for new fields
+   Routes
 --------------------------------*/
-/**
- * @swagger
- * components:
- *   schemas:
- *     Booking:
- *       type: object
- *       required:
- *         - customerName
- *         - email
- *         - phone
- *         - pickupDate
- *         - returnDate
- *         - carType
- *         - pickupLocation
- *         - idNumber
- *         - idType
- *         - termsAccepted
- *       properties:
- *         customerName:
- *           type: string
- *         email:
- *           type: string
- *           format: email
- *         phone:
- *           type: string
- *         pickupDate:
- *           type: string
- *           format: date
- *         returnDate:
- *           type: string
- *           format: date
- *         carType:
- *           type: string
- *         pickupLocation:
- *           type: string
- *         dropoffLocation:
- *           type: string
- *         additionalInfo:
- *           type: string
- *         idNumber:
- *           type: string
- *           description: ID or Passport number
- *         idType:
- *           type: string
- *           enum: [id, passport]
- *           description: Type of identification
- *         termsAccepted:
- *           type: boolean
- *           description: Must be true to proceed
- *     FileUpload:
- *       type: object
- *       properties:
- *         idDocument:
- *           type: string
- *           format: binary
- *           description: ID card or passport image
- *         drivingLicense:
- *           type: string
- *           format: binary
- *           description: Driving license image
- *         depositProof:
- *           type: string
- *           format: binary
- *           description: Proof of deposit payment
- */
 
-/* -----------------------------
-   Routes (Updated with file upload)
---------------------------------*/
 /**
  * @swagger
  * /api/bookings:
  *   post:
  *     summary: Submit a new booking with documents
+ *     description: Creates a new vehicle booking with optional document uploads (ID, driving license, deposit proof)
  *     tags: [Bookings]
  *     requestBody:
  *       required: true
@@ -157,11 +213,39 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
  *             allOf:
  *               - $ref: '#/components/schemas/Booking'
  *               - $ref: '#/components/schemas/FileUpload'
+ *           encoding:
+ *             idDocument:
+ *               contentType: application/pdf, image/jpeg, image/png
+ *             drivingLicense:
+ *               contentType: application/pdf, image/jpeg, image/png
+ *             depositProof:
+ *               contentType: application/pdf, image/jpeg, image/png
  *     responses:
  *       201:
  *         description: Booking created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/BookingResponse'
  *       400:
  *         description: Validation failed
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to process booking"
  */
 router.post('/', upload, validateBooking, createBooking);
 
@@ -170,6 +254,7 @@ router.post('/', upload, validateBooking, createBooking);
  * /api/bookings/send-confirmation:
  *   post:
  *     summary: Resend confirmation email for a booking
+ *     description: Resends the confirmation email with booking details and attached documents
  *     tags: [Bookings]
  *     requestBody:
  *       required: true
@@ -177,26 +262,149 @@ router.post('/', upload, validateBooking, createBooking);
  *         application/json:
  *           schema:
  *             type: object
+ *             required:
+ *               - bookingId
  *             properties:
  *               bookingId:
  *                 type: string
+ *                 example: "123e4567-e89b-12d3-a456-426614174000"
  *                 description: ID of the booking to resend confirmation
  *     responses:
  *       200:
  *         description: Confirmation email sent successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Confirmation email sent successfully"
  *       400:
  *         description: Invalid booking ID
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Booking ID is required"
+ *       404:
+ *         description: Booking not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Booking not found"
+ *       500:
+ *         description: Server error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Failed to send confirmation email"
  */
 router.post('/send-confirmation', sendBookingConfirmation);
 
-// Keep existing health and info routes unchanged
+/**
+ * @swagger
+ * /api/bookings/health:
+ *   get:
+ *     summary: Check booking API health
+ *     description: Returns the health status of the booking API service
+ *     tags: [Bookings]
+ *     responses:
+ *       200:
+ *         description: API is healthy
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 status:
+ *                   type: string
+ *                   example: "healthy"
+ *                 service:
+ *                   type: string
+ *                   example: "Booking API"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2026-09-09T10:30:00.000Z"
+ */
 router.get('/health', (req: Request, res: Response) => {
-    res.json({ status: 'healthy', service: 'Booking API', timestamp: new Date().toISOString() });
+    res.json({ 
+        status: 'healthy', 
+        service: 'Booking API', 
+        timestamp: new Date().toISOString() 
+    });
 });
 
+/**
+ * @swagger
+ * /api/bookings:
+ *   get:
+ *     summary: Get booking API information
+ *     description: Returns information about the booking API including available endpoints
+ *     tags: [Bookings]
+ *     responses:
+ *       200:
+ *         description: API information retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Vision Wan Car Hire Booking API"
+ *                 version:
+ *                   type: string
+ *                   example: "1.0.0"
+ *                 endpoints:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       method:
+ *                         type: string
+ *                         example: "POST"
+ *                       path:
+ *                         type: string
+ *                         example: "/api/bookings"
+ *                       description:
+ *                         type: string
+ *                         example: "Submit new booking with documents"
+ *                 status:
+ *                   type: string
+ *                   example: "operational"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2026-09-09T10:30:00.000Z"
+ */
 router.get('/', (req: Request, res: Response) => {
     res.json({
-        message: 'Vision One Car Hire Booking API',
+        message: 'Vision Wan Car Hire Booking API',
         version: '1.0.0',
         endpoints: [
             { method: 'POST', path: '/api/bookings', description: 'Submit new booking with documents' },
