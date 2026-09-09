@@ -97,13 +97,25 @@ const createDocumentsZip = async (booking: BookingData): Promise<string | null> 
 --------------------------------*/
 export const createBooking = async (req: Request, res: Response) => {
     try {
-        // Get files from multer
-        const files = req.files as {
-            idDocument?: Express.Multer.File[];
-            drivingLicense?: Express.Multer.File[];
-            depositProof?: Express.Multer.File[];
-        };
+        // Get files from multer - using any[] because we're using .any()
+        const files = req.files as any[];
+        
+        console.log('📁 Files received:', files?.length || 0);
+        if (files && files.length > 0) {
+            files.forEach((file, index) => {
+                console.log(`   File ${index + 1}: ${file.fieldname} - ${file.originalname} (${file.mimetype})`);
+            });
+        }
 
+        // Helper to find file by field name (supports both naming conventions)
+        const findFile = (fieldNames: string[]) => {
+            if (!files || !Array.isArray(files)) return undefined;
+            for (const fieldName of fieldNames) {
+                const file = files.find(f => f.fieldname === fieldName);
+                if (file) return file;
+            }
+            return undefined;
+        };
 
         // Get form data
         const bookingData: BookingData = {
@@ -146,28 +158,28 @@ export const createBooking = async (req: Request, res: Response) => {
         const bookingId = `V1-${Date.now().toString().slice(-8)}`;
         const status = 'confirmed';
 
-        // Store file paths
-        const findFile = (name: 'idDocument' | 'drivingLicense' | 'depositProof') =>
-            files?.[name]?.[0]?.path;
+        // Find files using both possible field names
+        const idDocFile = findFile(['idDocument', 'idDoc']);
+        const drivingLicenseFile = findFile(['drivingLicense', 'drivingLicence']);
+        const depositProofFile = findFile(['depositProof']);
 
         const bookingWithId: BookingData = {
             ...bookingData,
             id: bookingId,
             bookingDate: new Date().toISOString(),
             status,
-            idDocumentPath: findFile('idDocument'),
-            drivingLicensePath: findFile('drivingLicense'),
-            depositProofPath: findFile('depositProof')
+            idDocumentPath: idDocFile?.path,
+            drivingLicensePath: drivingLicenseFile?.path,
+            depositProofPath: depositProofFile?.path
         };
-
 
         bookings.push(bookingWithId);
 
         console.log(`📝 New booking created: ${bookingId} for ${bookingData.customerName}`);
         console.log(`📁 Documents uploaded:`, {
-            idDocument: !!files.idDocument,
-            drivingLicense: !!files.drivingLicense,
-            depositProof: !!files.depositProof
+            idDocument: !!idDocFile,
+            drivingLicense: !!drivingLicenseFile,
+            depositProof: !!depositProofFile
         });
 
         // Respond immediately
@@ -188,11 +200,10 @@ export const createBooking = async (req: Request, res: Response) => {
                 status,
                 bookingDate: formatDateTime(bookingWithId.bookingDate),
                 hasDocuments: {
-                    idDocument: !!findFile('idDocument'),
-                    drivingLicense: !!findFile('drivingLicense'),
-                    depositProof: !!findFile('depositProof')
+                    idDocument: !!idDocFile,
+                    drivingLicense: !!drivingLicenseFile,
+                    depositProof: !!depositProofFile
                 }
-
             }
         });
 
@@ -204,7 +215,6 @@ export const createBooking = async (req: Request, res: Response) => {
                 await sendCustomerConfirmation(bookingWithId, zipPath);
                 console.log(`✅ All emails sent for booking ${bookingId}`);
 
-                // Clean up ZIP file after sending
                 if (zipPath && fs.existsSync(zipPath)) {
                     setTimeout(() => {
                         fs.unlinkSync(zipPath);
