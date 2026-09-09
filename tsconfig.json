@@ -15,19 +15,18 @@
         "declaration": true,
         "declarationMap": true,
         "sourceMap": true,
-        "baseUrl": ".",
         "paths": {
             "@/*": [
-                "src/*"
+                "./src/*"
             ],
             "@controllers/*": [
-                "src/controllers/*"
+                "./src/controllers/*"
             ],
             "@routes/*": [
-                "src/routes/*"
+                "./src/routes/*"
             ],
             "@types/*": [
-                "src/types/*"
+                "./src/types/*"
             ]
         }
     },
