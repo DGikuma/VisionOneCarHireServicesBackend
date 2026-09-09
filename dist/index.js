@@ -7,11 +7,11 @@ exports.emailTransporter = void 0;
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const dotenv_1 = __importDefault(require("dotenv"));
+const swagger_ui_express_1 = __importDefault(require("swagger-ui-express"));
+const swagger_jsdoc_1 = __importDefault(require("swagger-jsdoc"));
 const bookings_1 = __importDefault(require("./routes/bookings"));
 const contact_1 = __importDefault(require("./routes/contact"));
 const nodemailer_1 = __importDefault(require("nodemailer"));
-const swaggerUi = require('swagger-ui-express');
-const swaggerJsdoc = require('swagger-jsdoc');
 dotenv_1.default.config();
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 5000;
@@ -34,6 +34,7 @@ app.use((0, cors_1.default)({
     },
     credentials: true,
 }));
+app.options(/.*/, (0, cors_1.default)());
 /* -----------------------------
    Body parsers
 --------------------------------*/
@@ -54,8 +55,8 @@ const swaggerOptions = {
     },
     apis: ['./src/routes/*.ts'], // make sure your routes are here
 };
-const swaggerSpec = swaggerJsdoc(swaggerOptions);
-app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+const swaggerSpec = (0, swagger_jsdoc_1.default)(swaggerOptions);
+app.use('/api/docs', swagger_ui_express_1.default.serve, swagger_ui_express_1.default.setup(swaggerSpec));
 app.get('/', (req, res) => res.redirect('/api/docs'));
 /* -----------------------------
    Email transporter (Nodemailer)
