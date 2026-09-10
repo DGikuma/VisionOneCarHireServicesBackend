@@ -252,100 +252,534 @@ export const createBooking = async (req: Request, res: Response) => {
 
 
 /* -----------------------------
-   Enhanced PDF Generation
+   Enhanced PDF Generation — Corporate Grade
 --------------------------------*/
 const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
     return new Promise((resolve, reject) => {
-        const doc = new PDFDocument({ margin: 50 });
-        const buffers: Buffer[] = [];
+        const doc = new PDFDocument({
+            size: 'A4',
+            margin: 50,
+            bufferPages: true,
+            info: {
+                Title: `Booking Confirmation — ${booking.id}`,
+                Author: 'Vision One Services',
+                Subject: 'Vehicle Rental Booking Confirmation',
+                Creator: 'Vision One Services Booking System',
+            },
+        });
 
+        const buffers: Buffer[] = [];
         doc.on('data', buffers.push.bind(buffers));
         doc.on('error', reject);
         doc.on('end', () => resolve(Buffer.concat(buffers)));
 
+        // ============================================================
+        // COLOR PALETTE
+        // ============================================================
+        const PRIMARY = '#FF6B35';
+        const SECONDARY = '#FF8B35';
+        const DARK = '#1a1a2e';
+        const MUTED = '#6b7280';
+        const LIGHT_BG = '#f8f9fa';
+        const BORDER = '#e5e7eb';
+        const SUCCESS = '#10b981';
+        const DANGER = '#dc2626';
+
+        const pageWidth = doc.page.width;
+        const pageHeight = doc.page.height;
+        const margin = 50;
+        const contentWidth = pageWidth - margin * 2;
+
+        // ============================================================
+        // HEADER BAND (gradient-like effect using two rectangles)
+        // ============================================================
+        const headerHeight = 140;
+        doc.rect(0, 0, pageWidth, headerHeight).fill(PRIMARY);
+        doc.rect(pageWidth * 0.5, 0, pageWidth * 0.5, headerHeight).fill(SECONDARY);
+
+        // Logo (white circle with border)
+        const logoSize = 70;
+        const logoX = margin + 10;
+        const logoY = (headerHeight - logoSize) / 2 + 4;
+
+        doc.circle(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2 + 4)
+            .lineWidth(3).strokeColor('#ffffff').stroke();
+
         if (fs.existsSync(LOGO_PATH)) {
             try {
-                doc.image(LOGO_PATH, doc.page.width / 2 - 40, 40, { width: 80, height: 80 });
-                doc.moveDown(4); // Space for the logo
+                doc.image(LOGO_PATH, logoX, logoY, {
+                    width: logoSize,
+                    height: logoSize,
+                    align: 'center',
+                    valign: 'center',
+                });
             } catch (err) {
                 console.error('Failed to add logo to PDF:', err);
             }
         }
 
+        // Company name & tagline (right of logo)
+        doc.fillColor('#ffffff')
+            .fontSize(24)
+            .font('Helvetica-Bold')
+            .text('Vision One Services', logoX + logoSize + 20, logoY + 6);
 
-        // Header
-        doc.fillColor('#FF6B35').fontSize(25).text('Vision One Service', { align: 'center' });
-        doc.moveDown();
-        doc.fillColor('#333').fontSize(20).text('Booking Confirmation', { align: 'center' });
-        doc.moveDown();
+        doc.fontSize(11)
+            .font('Helvetica')
+            .fillColor('rgba(255,255,255,0.95)')
+            .text('Premium Vehicle Rental & Mobility Solutions', logoX + logoSize + 20, logoY + 36);
 
-        // Booking Info
-        doc.fontSize(12).text(`Booking ID: ${booking.id}`);
-        doc.text(`Date: ${formatDateTime(booking.bookingDate)}`);
-        doc.moveDown();
+        doc.fontSize(9)
+            .fillColor('rgba(255,255,255,0.85)')
+            .text('Kenya: +254 705 336 311  |  UK: +44 7397 549 590', logoX + logoSize + 20, logoY + 54);
 
-        // Customer Information
-        doc.fontSize(16).text('Customer Information:');
-        doc.fontSize(12).text(`Name: ${booking.customerName}`);
-        doc.text(`Email: ${booking.email}`);
-        doc.text(`Phone: ${booking.phone || 'N/A'}`);
-        doc.text(`${booking.idType === 'passport' ? 'Passport No' : 'ID Number'}: ${booking.idNumber}`);
-        if (booking.additionalInfo) doc.text(`Additional Info: ${booking.additionalInfo}`);
-        doc.moveDown();
+        // Document title strip on the right
+        doc.fillColor('#ffffff')
+            .fontSize(14)
+            .font('Helvetica-Bold')
+            .text('BOOKING CONFIRMATION', 0, logoY + 12, {
+                align: 'right',
+                width: pageWidth - margin,
+            });
 
-        // Booking Details
-        doc.fontSize(16).text('Booking Details:');
-        doc.fontSize(12).text(`Car Type: ${booking.carType}`);
-        doc.text(`Pickup Date: ${formatDate(booking.pickupDate)}`);
-        doc.text(`Return Date: ${formatDate(booking.returnDate)}`);
-        doc.text(`Pickup Location: ${booking.pickupLocation || 'Main Office'}`);
-        if (booking.dropoffLocation) doc.text(`Drop-off Location: ${booking.dropoffLocation}`);
-        doc.moveDown();
+        doc.fontSize(9)
+            .font('Helvetica')
+            .fillColor('rgba(255,255,255,0.95)')
+            .text(`Booking ID: ${booking.id}`, 0, logoY + 34, {
+                align: 'right',
+                width: pageWidth - margin,
+            });
 
-        // ✅ Rental Estimate Section
+        doc.text(`Issued: ${formatDateTime(booking.bookingDate)}`, 0, logoY + 48, {
+            align: 'right',
+            width: pageWidth - margin,
+        });
+
+        // Start content below the header
+        let y = headerHeight + 30;
+
+        // ============================================================
+        // HELPER: Section header with underline accent
+        // ============================================================
+        const sectionHeader = (title: string) => {
+            // Check for page break
+            if (y > pageHeight - 120) {
+                doc.addPage();
+                y = margin;
+            }
+
+            doc.fillColor(PRIMARY)
+                .fontSize(13)
+                .font('Helvetica-Bold')
+                .text(title.toUpperCase(), margin, y);
+
+            // Underline accent
+            doc.moveTo(margin, y + 18)
+                .lineTo(margin + contentWidth, y + 18)
+                .lineWidth(1)
+                .strokeColor(BORDER)
+                .stroke();
+
+            // Small colored accent under the title
+            doc.moveTo(margin, y + 18)
+                .lineTo(margin + 60, y + 18)
+                .lineWidth(2)
+                .strokeColor(PRIMARY)
+                .stroke();
+
+            y += 32;
+        };
+
+        // ============================================================
+        // HELPER: Info row (label left, value right)
+        // ============================================================
+        const infoRow = (label: string, value: string, options?: { highlight?: boolean }) => {
+            if (y > pageHeight - 70) {
+                doc.addPage();
+                y = margin;
+            }
+
+            doc.fontSize(10)
+                .font('Helvetica-Bold')
+                .fillColor(MUTED)
+                .text(label, margin, y, { width: contentWidth / 2 });
+
+            doc.fontSize(10)
+                .font('Helvetica')
+                .fillColor(options?.highlight ? PRIMARY : DARK)
+                .text(value || '—', margin + contentWidth / 2, y, {
+                    width: contentWidth / 2,
+                    align: 'right',
+                });
+
+            y += 20;
+        };
+
+        // ============================================================
+        // HELPER: Two-column info block
+        // ============================================================
+        const twoColumnRow = (leftLabel: string, leftValue: string, rightLabel: string, rightValue: string) => {
+            if (y > pageHeight - 70) {
+                doc.addPage();
+                y = margin;
+            }
+
+            const colWidth = contentWidth / 2 - 10;
+
+            doc.fontSize(10)
+                .font('Helvetica-Bold')
+                .fillColor(MUTED)
+                .text(leftLabel, margin, y, { width: colWidth });
+
+            doc.fontSize(10)
+                .font('Helvetica-Bold')
+                .fillColor(MUTED)
+                .text(rightLabel, margin + colWidth + 20, y, { width: colWidth });
+
+            doc.fontSize(10)
+                .font('Helvetica')
+                .fillColor(DARK)
+                .text(leftValue || '—', margin, y + 14, { width: colWidth });
+
+            doc.fontSize(10)
+                .font('Helvetica')
+                .fillColor(DARK)
+                .text(rightValue || '—', margin + colWidth + 20, y + 14, { width: colWidth });
+
+            y += 36;
+        };
+
+        // ============================================================
+        // SECTION: Booking Summary (highlighted box)
+        // ============================================================
+        // Highlighted summary box at the top
+        const summaryBoxHeight = 90;
+        doc.roundedRect(margin, y, contentWidth, summaryBoxHeight, 8)
+            .fillAndStroke(LIGHT_BG, BORDER);
+
+        // Left accent bar
+        doc.rect(margin, y, 4, summaryBoxHeight).fill(PRIMARY);
+
+        doc.fillColor(DARK)
+            .fontSize(11)
+            .font('Helvetica-Bold')
+            .text('BOOKING SUMMARY', margin + 20, y + 14);
+
+        doc.fontSize(9)
+            .font('Helvetica')
+            .fillColor(MUTED)
+            .text('Reservation details at a glance', margin + 20, y + 30);
+
+        // Summary grid inside box
+        const summaryY = y + 48;
+        const summaryCol = contentWidth / 3;
+
+        doc.fontSize(9).font('Helvetica-Bold').fillColor(MUTED).text('VEHICLE', margin + 20, summaryY);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(DARK).text(booking.carType || '—', margin + 20, summaryY + 12);
+
+        doc.fontSize(9).font('Helvetica-Bold').fillColor(MUTED).text('PICKUP', margin + 20 + summaryCol, summaryY);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(DARK).text(formatDate(booking.pickupDate), margin + 20 + summaryCol, summaryY + 12);
+
+        doc.fontSize(9).font('Helvetica-Bold').fillColor(MUTED).text('RETURN', margin + 20 + summaryCol * 2, summaryY);
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(DARK).text(formatDate(booking.returnDate), margin + 20 + summaryCol * 2, summaryY + 12);
+
+        y += summaryBoxHeight + 30;
+
+        // ============================================================
+        // SECTION: Customer Information
+        // ============================================================
+        sectionHeader('Customer Information');
+        infoRow('Full Name', booking.customerName);
+        infoRow('Email Address', booking.email);
+        infoRow('Phone Number', booking.phone || 'N/A');
+        if (booking.nationality) infoRow('Nationality', booking.nationality);
+        infoRow(
+            booking.idType === 'passport' ? 'Passport Number' : 'National ID Number',
+            booking.idNumber
+        );
+        y += 10;
+
+        // ============================================================
+        // SECTION: Rental Details
+        // ============================================================
+        sectionHeader('Rental Details');
+        infoRow('Vehicle Type', booking.carType);
+        infoRow('Pickup Location', booking.pickupLocation || 'Main Office');
+        if (booking.dropoffLocation) infoRow('Drop-off Location', booking.dropoffLocation);
+        infoRow('Pickup Date', formatDate(booking.pickupDate));
+        infoRow('Return Date', formatDate(booking.returnDate));
+        y += 10;
+
+        // ============================================================
+        // SECTION: Rental Estimate (highlighted)
+        // ============================================================
         if (booking.estimatedTotal || booking.dailyRate) {
-            doc.fontSize(16).text('Rental Estimate:');
-            doc.fontSize(12);
+            sectionHeader('Rental Estimate');
+
             if (booking.periodCategory) {
                 const tierLabel =
-                    booking.periodCategory === 'short' ? '1–7 days' :
-                    booking.periodCategory === 'medium' ? '7–20 days' : '20+ days';
-                doc.text(`Rate Tier: ${tierLabel}`);
+                    booking.periodCategory === 'short' ? '1–7 days (Short-Term)' :
+                    booking.periodCategory === 'medium' ? '7–20 days (Medium-Term)' :
+                    '20+ days (Long-Term)';
+                infoRow('Rate Tier', tierLabel);
             }
-            if (booking.rentalDays) doc.text(`Rental Days: ${booking.rentalDays} day${booking.rentalDays === 1 ? '' : 's'}`);
-            if (booking.dailyRate) doc.text(`Daily Rate: KES ${booking.dailyRate.toLocaleString()}/day`);
+            if (booking.rentalDays) {
+                infoRow('Rental Duration', `${booking.rentalDays} day${booking.rentalDays === 1 ? '' : 's'}`);
+            }
+            if (booking.dailyRate) {
+                infoRow('Daily Rate', `KES ${booking.dailyRate.toLocaleString()}/day`);
+            }
+
+            // Total box
             if (booking.estimatedTotal) {
-                doc.fillColor('#e10b0b').fontSize(13).text(`Estimated Total: KES ${booking.estimatedTotal.toLocaleString()}`);
-                doc.fillColor('#000').fontSize(12);
+                if (y > pageHeight - 100) {
+                    doc.addPage();
+                    y = margin;
+                }
+
+                const totalBoxHeight = 48;
+                doc.roundedRect(margin, y, contentWidth, totalBoxHeight, 8)
+                    .fillAndStroke('#fff7ed', '#fed7aa');
+
+                doc.rect(margin, y, 4, totalBoxHeight).fill(PRIMARY);
+
+                doc.fillColor('#9f1239')
+                    .fontSize(11)
+                    .font('Helvetica-Bold')
+                    .text('ESTIMATED TOTAL', margin + 20, y + 10);
+
+                doc.fillColor(PRIMARY)
+                    .fontSize(20)
+                    .font('Helvetica-Bold')
+                    .text(`KES ${booking.estimatedTotal.toLocaleString()}`, margin + 20, y + 24);
+
+                doc.fillColor(MUTED)
+                    .fontSize(8)
+                    .font('Helvetica')
+                    .text('Payable on vehicle pickup — subject to final inspection', 0, y + 30, {
+                        align: 'right',
+                        width: pageWidth - margin,
+                    });
+
+                y += totalBoxHeight + 20;
             }
-            doc.moveDown();
         }
 
-        // Security Deposit
-        doc.fontSize(16).text('Security Deposit Information:');
-        doc.fontSize(12).text(`Deposit Status: ${booking.depositProofPath ? 'Payment proof submitted' : 'Pending'}`);
-        doc.text(`Documents Status: All required documents ${booking.idDocumentPath && booking.drivingLicensePath ? 'submitted' : 'pending'}`);
-        doc.moveDown();
+        // ============================================================
+        // SECTION: Document Checklist
+        // ============================================================
+        sectionHeader('Document Checklist');
 
-        // Terms & Conditions
-        doc.fontSize(14).text('Terms & Conditions:', { underline: true });
-        doc.fontSize(10).text('1. Customer must present valid driver\'s license and ID/passport at pickup.');
-        doc.text('2. Security deposit is required and will be refunded upon vehicle return.');
-        doc.text('3. Minimum rental age is 25 years.');
-        doc.text('4. Fuel policy: Return with same level as pickup.');
-        doc.text('5. Insurance included as per rental agreement.');
-        doc.text('6. All uploaded documents will be kept confidential.');
-        doc.moveDown();
+        const documents = [
+            { label: 'National ID / Passport', uploaded: !!booking.idDocumentPath },
+            { label: 'Driving Licence', uploaded: !!booking.drivingLicensePath },
+            { label: 'Proof of Payment', uploaded: !!booking.depositProofPath },
+        ];
 
-        // Important Notes
-        doc.fontSize(12).text('Important Notes:', { underline: true });
-        doc.fontSize(10).text('• Please bring your original ID/passport and driving license for verification.');
-        doc.text('• Your security deposit receipt must be presented at pickup.');
-        doc.text('• Keep all booking documents for your records.');
-        doc.moveDown();
+        documents.forEach((docItem) => {
+            if (y > pageHeight - 70) {
+                doc.addPage();
+                y = margin;
+            }
 
-        doc.fontSize(12).text('Thank you for choosing Vision One Services !', { align: 'center' });
-        doc.text('For inquiries: vision1servicesltd@gmail.com', { align: 'center' });
+            // Circle indicator
+            const indicatorX = margin + 6;
+            const indicatorY = y + 5;
+
+            doc.circle(indicatorX, indicatorY, 6)
+                .lineWidth(1.5)
+                .strokeColor(docItem.uploaded ? SUCCESS : '#d1d5db')
+                .stroke();
+
+            if (docItem.uploaded) {
+                doc.fillColor(SUCCESS).circle(indicatorX, indicatorY, 6).fill();
+            }
+
+            doc.fillColor(DARK)
+                .fontSize(10)
+                .font('Helvetica-Bold')
+                .text(docItem.label, margin + 20, y);
+
+            doc.fillColor(docItem.uploaded ? SUCCESS : DANGER)
+                .fontSize(9)
+                .font('Helvetica-Bold')
+                .text(
+                    docItem.uploaded ? '✓ Received' : '✗ Pending',
+                    0,
+                    y + 1,
+                    { align: 'right', width: pageWidth - margin }
+                );
+
+            y += 24;
+        });
+
+        y += 10;
+
+        // ============================================================
+        // SECTION: Additional Notes (if any)
+        // ============================================================
+        if (booking.additionalInfo) {
+            sectionHeader('Additional Notes');
+
+            const notesText = booking.additionalInfo;
+            const notesHeight = doc.heightOfString(notesText, { width: contentWidth - 30 });
+
+            if (y + notesHeight + 30 > pageHeight - 60) {
+                doc.addPage();
+                y = margin;
+            }
+
+            doc.roundedRect(margin, y, contentWidth, notesHeight + 20, 6)
+                .fillAndStroke(LIGHT_BG, BORDER);
+
+            doc.fillColor(DARK)
+                .fontSize(10)
+                .font('Helvetica')
+                .text(notesText, margin + 15, y + 10, { width: contentWidth - 30 });
+
+            y += notesHeight + 30;
+        }
+
+        // ============================================================
+        // SECTION: Terms & Conditions
+        // ============================================================
+        sectionHeader('Terms & Conditions');
+
+        const terms = [
+            'Customer must present a valid driver\'s licence and ID/passport at pickup.',
+            'Security deposit is required and will be refunded upon vehicle return.',
+            'Minimum rental age is 25 years with at least 3 years driving experience.',
+            'Fuel policy: Return with the same fuel level as at pickup.',
+            'Insurance is included as per the rental agreement.',
+            'All uploaded documents will be kept strictly confidential.',
+        ];
+
+        terms.forEach((term, idx) => {
+            if (y > pageHeight - 60) {
+                doc.addPage();
+                y = margin;
+            }
+
+            doc.fillColor(PRIMARY)
+                .fontSize(9)
+                .font('Helvetica-Bold')
+                .text(`${idx + 1}.`, margin + 4, y);
+
+            doc.fillColor(DARK)
+                .fontSize(9)
+                .font('Helvetica')
+                .text(term, margin + 20, y, { width: contentWidth - 20 });
+
+            y += 16;
+        });
+
+        y += 16;
+
+        // ============================================================
+        // IMPORTANT NOTES BOX
+        // ============================================================
+        if (y > pageHeight - 120) {
+            doc.addPage();
+            y = margin;
+        }
+
+        const importantNotes = [
+            'Bring your original ID/passport and driving licence for verification.',
+            'Your security deposit receipt must be presented at vehicle pickup.',
+            'Keep this document and the attached PDF for your records.',
+        ];
+
+        const notesBoxHeight = 30 + importantNotes.length * 16;
+        doc.roundedRect(margin, y, contentWidth, notesBoxHeight, 8)
+            .fillAndStroke('#fff7ed', '#fed7aa');
+
+        doc.rect(margin, y, 4, notesBoxHeight).fill(PRIMARY);
+
+        doc.fillColor('#9f1239')
+            .fontSize(11)
+            .font('Helvetica-Bold')
+            .text('IMPORTANT NOTES', margin + 20, y + 12);
+
+        importantNotes.forEach((note, idx) => {
+            doc.fillColor(DARK)
+                .fontSize(9)
+                .font('Helvetica')
+                .text(`•  ${note}`, margin + 20, y + 32 + idx * 16, {
+                    width: contentWidth - 30,
+                });
+        });
+
+        y += notesBoxHeight + 30;
+
+        // ============================================================
+        // CLOSING MESSAGE
+        // ============================================================
+        if (y > pageHeight - 80) {
+            doc.addPage();
+            y = margin;
+        }
+
+        doc.fillColor(PRIMARY)
+            .fontSize(13)
+            .font('Helvetica-Bold')
+            .text('Thank You for Choosing Vision One Services', 0, y, {
+                align: 'center',
+                width: pageWidth,
+            });
+
+        doc.fillColor(MUTED)
+            .fontSize(9)
+            .font('Helvetica')
+            .text(
+                'For any inquiries, please contact us at visionwanservices@gmail.com',
+                0,
+                y + 20,
+                { align: 'center', width: pageWidth }
+            );
+
+        // ============================================================
+        // FOOTER on every page
+        // ============================================================
+        const range = doc.bufferedPageRange();
+
+        for (let i = range.start; i < range.start + range.count; i++) {
+            doc.switchToPage(i);
+
+            // Bottom border line
+            doc.moveTo(margin, pageHeight - 45)
+                .lineTo(pageWidth - margin, pageHeight - 45)
+                .lineWidth(0.5)
+                .strokeColor(BORDER)
+                .stroke();
+
+            doc.fillColor(MUTED)
+                .fontSize(8)
+                .font('Helvetica')
+                .text(
+                    `Vision One Services  •  visionwanservices.com  •  Kenya: +254 705 336 311  •  UK: +44 7397 549 590`,
+                    margin,
+                    pageHeight - 38,
+                    { align: 'center', width: contentWidth }
+                );
+
+            doc.fillColor(MUTED)
+                .fontSize(8)
+                .text(
+                    `© ${new Date().getFullYear()} Vision One Services — All rights reserved.`,
+                    margin,
+                    pageHeight - 26,
+                    { align: 'center', width: contentWidth }
+                );
+
+            doc.fillColor(MUTED)
+                .fontSize(8)
+                .text(
+                    `Page ${i - range.start + 1} of ${range.count}`,
+                    margin,
+                    pageHeight - 38,
+                    { align: 'right', width: contentWidth }
+                );
+        }
 
         doc.end();
     });
