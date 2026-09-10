@@ -252,7 +252,7 @@ export const createBooking = async (req: Request, res: Response) => {
 
 
 /* -----------------------------
-   Enhanced PDF Generation — Corporate Grade
+   Enhanced PDF Generation — Corporate Grade (2-page max)
 --------------------------------*/
 const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
     return new Promise((resolve, reject) => {
@@ -260,6 +260,7 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             size: 'A4',
             margin: 50,
             bufferPages: true,
+            autoFirstPage: true,
             info: {
                 Title: `Booking Confirmation — ${booking.id}`,
                 Author: 'Vision One Services',
@@ -291,24 +292,24 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         const contentWidth = pageWidth - margin * 2;
 
         // ============================================================
-        // HEADER BAND (gradient-like effect using two rectangles)
+        // HEADER BAND
         // ============================================================
-        const headerHeight = 140;
+        const headerHeight = 130;
         doc.rect(0, 0, pageWidth, headerHeight).fill(PRIMARY);
         doc.rect(pageWidth * 0.5, 0, pageWidth * 0.5, headerHeight).fill(SECONDARY);
 
-        // ✅ Divider moved further right (was 0.58) so the left block has more room
-        const dividerX = pageWidth * 0.62;
-        doc.moveTo(dividerX, 24)
-            .lineTo(dividerX, headerHeight - 24)
+        // Divider — moved to 55% so the RIGHT side has plenty of room
+        const dividerX = pageWidth * 0.55;
+        doc.moveTo(dividerX, 20)
+            .lineTo(dividerX, headerHeight - 20)
             .lineWidth(1)
             .strokeColor('rgba(255,255,255,0.35)')
             .stroke();
 
-        // Logo (white circle with border)
-        const logoSize = 65;
-        const logoX = margin + 5;
-        const logoY = (headerHeight - logoSize) / 2 + 4;
+        // Logo
+        const logoSize = 60;
+        const logoX = margin;
+        const logoY = (headerHeight - logoSize) / 2 + 2;
 
         doc.circle(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2 + 3)
             .lineWidth(2.5).strokeColor('#ffffff').stroke();
@@ -326,115 +327,117 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             }
         }
 
-        // ✅ LEFT SIDE: Company info — wider block, smaller fonts
-        const leftBlockX = logoX + logoSize + 15;
-        const leftBlockWidth = dividerX - leftBlockX - 15;
+        // LEFT SIDE: Company info (smaller font, tighter spacing)
+        const leftBlockX = logoX + logoSize + 12;
+        const leftBlockWidth = dividerX - leftBlockX - 10;
 
         doc.fillColor('#ffffff')
-            .fontSize(18)
+            .fontSize(15)
             .font('Helvetica-Bold')
             .text('Vision One Services', leftBlockX, logoY + 4, {
                 width: leftBlockWidth,
                 lineBreak: false,
             });
 
-        doc.fontSize(9)
+        doc.fontSize(8)
             .font('Helvetica')
             .fillColor('rgba(255,255,255,0.95)')
-            .text('Premium Vehicle Rental & Mobility Solutions', leftBlockX, logoY + 30, {
+            .text('Premium Vehicle Rental & Mobility Solutions', leftBlockX, logoY + 24, {
                 width: leftBlockWidth,
                 lineBreak: false,
             });
 
-        doc.fontSize(8)
+        doc.fontSize(7.5)
             .fillColor('rgba(255,255,255,0.85)')
-            .text('Kenya: +254 705 336 311', leftBlockX, logoY + 48, {
+            .text('Kenya: +254 705 336 311', leftBlockX, logoY + 40, {
                 width: leftBlockWidth,
                 lineBreak: false,
             });
 
-        doc.fontSize(8)
+        doc.fontSize(7.5)
             .fillColor('rgba(255,255,255,0.85)')
-            .text('UK: +44 7397 549 590', leftBlockX, logoY + 60, {
+            .text('UK: +44 7397 549 590', leftBlockX, logoY + 52, {
                 width: leftBlockWidth,
                 lineBreak: false,
             });
 
-        // ✅ RIGHT SIDE: Document title block — starts after the divider
-        const rightBlockX = dividerX + 15;
+        // RIGHT SIDE: Document title (right-aligned, plenty of width)
+        const rightBlockX = dividerX + 12;
         const rightBlockWidth = pageWidth - rightBlockX - margin;
 
         doc.fillColor('#ffffff')
-            .fontSize(13)
+            .fontSize(12)
             .font('Helvetica-Bold')
-            .text('BOOKING CONFIRMATION', rightBlockX, logoY + 14, {
+            .text('BOOKING CONFIRMATION', rightBlockX, logoY + 10, {
                 align: 'right',
                 width: rightBlockWidth,
+                lineBreak: false,
             });
 
-        doc.fontSize(9)
+        doc.fontSize(8)
             .font('Helvetica')
             .fillColor('rgba(255,255,255,0.95)')
-            .text(`Booking ID: ${booking.id}`, rightBlockX, logoY + 36, {
+            .text(`Booking ID: ${booking.id}`, rightBlockX, logoY + 28, {
                 align: 'right',
                 width: rightBlockWidth,
+                lineBreak: false,
             });
 
-        doc.text(`Issued: ${formatDateTime(booking.bookingDate)}`, rightBlockX, logoY + 50, {
-            align: 'right',
-            width: rightBlockWidth,
-        });
+        doc.fontSize(8)
+            .font('Helvetica')
+            .fillColor('rgba(255,255,255,0.95)')
+            .text(`Issued: ${formatDateTime(booking.bookingDate)}`, rightBlockX, logoY + 42, {
+                align: 'right',
+                width: rightBlockWidth,
+                lineBreak: false,
+            });
 
         // Start content below the header
-        let y = headerHeight + 30;
+        let y = headerHeight + 22;
 
         // ============================================================
-        // HELPER: Section header with underline accent
+        // HELPERS — Compact versions to fit 2 pages
         // ============================================================
-        const sectionHeader = (title: string) => {
-            // Check for page break
-            if (y > pageHeight - 120) {
-                doc.addPage();
-                y = margin;
+        const checkPageBreak = (needed: number) => {
+            if (y + needed > pageHeight - 55) {
+                // Only add page if we're still on page 1; otherwise allow page 2 overflow
+                if (doc.bufferedPageRange().count < 2) {
+                    doc.addPage();
+                    y = margin;
+                }
             }
+        };
 
+        const sectionHeader = (title: string) => {
+            checkPageBreak(40);
             doc.fillColor(PRIMARY)
-                .fontSize(13)
+                .fontSize(11)
                 .font('Helvetica-Bold')
                 .text(title.toUpperCase(), margin, y);
 
-            // Underline accent
-            doc.moveTo(margin, y + 18)
-                .lineTo(margin + contentWidth, y + 18)
-                .lineWidth(1)
+            doc.moveTo(margin, y + 15)
+                .lineTo(margin + contentWidth, y + 15)
+                .lineWidth(0.8)
                 .strokeColor(BORDER)
                 .stroke();
 
-            // Small colored accent under the title
-            doc.moveTo(margin, y + 18)
-                .lineTo(margin + 60, y + 18)
+            doc.moveTo(margin, y + 15)
+                .lineTo(margin + 50, y + 15)
                 .lineWidth(2)
                 .strokeColor(PRIMARY)
                 .stroke();
 
-            y += 32;
+            y += 26;
         };
 
-        // ============================================================
-        // HELPER: Info row (label left, value right)
-        // ============================================================
         const infoRow = (label: string, value: string, options?: { highlight?: boolean }) => {
-            if (y > pageHeight - 70) {
-                doc.addPage();
-                y = margin;
-            }
-
-            doc.fontSize(10)
+            checkPageBreak(22);
+            doc.fontSize(9)
                 .font('Helvetica-Bold')
                 .fillColor(MUTED)
                 .text(label, margin, y, { width: contentWidth / 2 });
 
-            doc.fontSize(10)
+            doc.fontSize(9)
                 .font('Helvetica')
                 .fillColor(options?.highlight ? PRIMARY : DARK)
                 .text(value || '—', margin + contentWidth / 2, y, {
@@ -442,81 +445,44 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
                     align: 'right',
                 });
 
-            y += 20;
+            y += 16;
         };
 
         // ============================================================
-        // HELPER: Two-column info block
+        // BOOKING SUMMARY BOX
         // ============================================================
-        const twoColumnRow = (leftLabel: string, leftValue: string, rightLabel: string, rightValue: string) => {
-            if (y > pageHeight - 70) {
-                doc.addPage();
-                y = margin;
-            }
-
-            const colWidth = contentWidth / 2 - 10;
-
-            doc.fontSize(10)
-                .font('Helvetica-Bold')
-                .fillColor(MUTED)
-                .text(leftLabel, margin, y, { width: colWidth });
-
-            doc.fontSize(10)
-                .font('Helvetica-Bold')
-                .fillColor(MUTED)
-                .text(rightLabel, margin + colWidth + 20, y, { width: colWidth });
-
-            doc.fontSize(10)
-                .font('Helvetica')
-                .fillColor(DARK)
-                .text(leftValue || '—', margin, y + 14, { width: colWidth });
-
-            doc.fontSize(10)
-                .font('Helvetica')
-                .fillColor(DARK)
-                .text(rightValue || '—', margin + colWidth + 20, y + 14, { width: colWidth });
-
-            y += 36;
-        };
-
-        // ============================================================
-        // SECTION: Booking Summary (highlighted box)
-        // ============================================================
-        // Highlighted summary box at the top
-        const summaryBoxHeight = 90;
-        doc.roundedRect(margin, y, contentWidth, summaryBoxHeight, 8)
+        const summaryBoxHeight = 78;
+        doc.roundedRect(margin, y, contentWidth, summaryBoxHeight, 6)
             .fillAndStroke(LIGHT_BG, BORDER);
 
-        // Left accent bar
-        doc.rect(margin, y, 4, summaryBoxHeight).fill(PRIMARY);
+        doc.rect(margin, y, 3, summaryBoxHeight).fill(PRIMARY);
 
         doc.fillColor(DARK)
-            .fontSize(11)
+            .fontSize(10)
             .font('Helvetica-Bold')
-            .text('BOOKING SUMMARY', margin + 20, y + 14);
+            .text('BOOKING SUMMARY', margin + 16, y + 10);
 
-        doc.fontSize(9)
+        doc.fontSize(7.5)
             .font('Helvetica')
             .fillColor(MUTED)
-            .text('Reservation details at a glance', margin + 20, y + 30);
+            .text('Reservation details at a glance', margin + 16, y + 24);
 
-        // Summary grid inside box
-        const summaryY = y + 48;
+        const summaryY = y + 40;
         const summaryCol = contentWidth / 3;
 
-        doc.fontSize(9).font('Helvetica-Bold').fillColor(MUTED).text('VEHICLE', margin + 20, summaryY);
-        doc.fontSize(12).font('Helvetica-Bold').fillColor(DARK).text(booking.carType || '—', margin + 20, summaryY + 12);
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(MUTED).text('VEHICLE', margin + 16, summaryY);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(booking.carType || '—', margin + 16, summaryY + 10);
 
-        doc.fontSize(9).font('Helvetica-Bold').fillColor(MUTED).text('PICKUP', margin + 20 + summaryCol, summaryY);
-        doc.fontSize(12).font('Helvetica-Bold').fillColor(DARK).text(formatDate(booking.pickupDate), margin + 20 + summaryCol, summaryY + 12);
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(MUTED).text('PICKUP', margin + 16 + summaryCol, summaryY);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(formatDate(booking.pickupDate), margin + 16 + summaryCol, summaryY + 10);
 
-        doc.fontSize(9).font('Helvetica-Bold').fillColor(MUTED).text('RETURN', margin + 20 + summaryCol * 2, summaryY);
-        doc.fontSize(12).font('Helvetica-Bold').fillColor(DARK).text(formatDate(booking.returnDate), margin + 20 + summaryCol * 2, summaryY + 12);
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(MUTED).text('RETURN', margin + 16 + summaryCol * 2, summaryY);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(formatDate(booking.returnDate), margin + 16 + summaryCol * 2, summaryY + 10);
 
-        y += summaryBoxHeight + 30;
+        y += summaryBoxHeight + 20;
 
         // ============================================================
-        // SECTION: Customer Information
+        // CUSTOMER INFORMATION
         // ============================================================
         sectionHeader('Customer Information');
         infoRow('Full Name', booking.customerName);
@@ -527,10 +493,10 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             booking.idType === 'passport' ? 'Passport Number' : 'National ID Number',
             booking.idNumber
         );
-        y += 10;
+        y += 6;
 
         // ============================================================
-        // SECTION: Rental Details
+        // RENTAL DETAILS
         // ============================================================
         sectionHeader('Rental Details');
         infoRow('Vehicle Type', booking.carType);
@@ -538,10 +504,10 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         if (booking.dropoffLocation) infoRow('Drop-off Location', booking.dropoffLocation);
         infoRow('Pickup Date', formatDate(booking.pickupDate));
         infoRow('Return Date', formatDate(booking.returnDate));
-        y += 10;
+        y += 6;
 
         // ============================================================
-        // SECTION: Rental Estimate (highlighted)
+        // RENTAL ESTIMATE
         // ============================================================
         if (booking.estimatedTotal || booking.dailyRate) {
             sectionHeader('Rental Estimate');
@@ -560,43 +526,39 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
                 infoRow('Daily Rate', `KES ${booking.dailyRate.toLocaleString()}/day`);
             }
 
-            // Total box
             if (booking.estimatedTotal) {
-                if (y > pageHeight - 100) {
-                    doc.addPage();
-                    y = margin;
-                }
+                checkPageBreak(60);
 
-                const totalBoxHeight = 48;
-                doc.roundedRect(margin, y, contentWidth, totalBoxHeight, 8)
+                const totalBoxHeight = 42;
+                doc.roundedRect(margin, y, contentWidth, totalBoxHeight, 6)
                     .fillAndStroke('#fff7ed', '#fed7aa');
 
-                doc.rect(margin, y, 4, totalBoxHeight).fill(PRIMARY);
+                doc.rect(margin, y, 3, totalBoxHeight).fill(PRIMARY);
 
                 doc.fillColor('#9f1239')
-                    .fontSize(11)
+                    .fontSize(9)
                     .font('Helvetica-Bold')
-                    .text('ESTIMATED TOTAL', margin + 20, y + 10);
+                    .text('ESTIMATED TOTAL', margin + 16, y + 8);
 
                 doc.fillColor(PRIMARY)
-                    .fontSize(20)
+                    .fontSize(17)
                     .font('Helvetica-Bold')
-                    .text(`KES ${booking.estimatedTotal.toLocaleString()}`, margin + 20, y + 24);
+                    .text(`KES ${booking.estimatedTotal.toLocaleString()}`, margin + 16, y + 20);
 
                 doc.fillColor(MUTED)
-                    .fontSize(8)
+                    .fontSize(7)
                     .font('Helvetica')
-                    .text('Payable on vehicle pickup — subject to final inspection', 0, y + 30, {
+                    .text('Payable on vehicle pickup — subject to final inspection', 0, y + 24, {
                         align: 'right',
                         width: pageWidth - margin,
                     });
 
-                y += totalBoxHeight + 20;
+                y += totalBoxHeight + 16;
             }
         }
 
         // ============================================================
-        // SECTION: Document Checklist
+        // DOCUMENT CHECKLIST
         // ============================================================
         sectionHeader('Document Checklist');
 
@@ -607,31 +569,27 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         ];
 
         documents.forEach((docItem) => {
-            if (y > pageHeight - 70) {
-                doc.addPage();
-                y = margin;
-            }
+            checkPageBreak(22);
 
-            // Circle indicator
-            const indicatorX = margin + 6;
-            const indicatorY = y + 5;
+            const indicatorX = margin + 5;
+            const indicatorY = y + 4;
 
-            doc.circle(indicatorX, indicatorY, 6)
+            doc.circle(indicatorX, indicatorY, 5)
                 .lineWidth(1.5)
                 .strokeColor(docItem.uploaded ? SUCCESS : '#d1d5db')
                 .stroke();
 
             if (docItem.uploaded) {
-                doc.fillColor(SUCCESS).circle(indicatorX, indicatorY, 6).fill();
+                doc.fillColor(SUCCESS).circle(indicatorX, indicatorY, 5).fill();
             }
 
             doc.fillColor(DARK)
-                .fontSize(10)
+                .fontSize(9)
                 .font('Helvetica-Bold')
-                .text(docItem.label, margin + 20, y);
+                .text(docItem.label, margin + 16, y);
 
             doc.fillColor(docItem.uploaded ? SUCCESS : DANGER)
-                .fontSize(9)
+                .fontSize(8)
                 .font('Helvetica-Bold')
                 .text(
                     docItem.uploaded ? '✓ Received' : '✗ Pending',
@@ -640,38 +598,35 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
                     { align: 'right', width: pageWidth - margin }
                 );
 
-            y += 24;
+            y += 18;
         });
 
-        y += 10;
+        y += 6;
 
         // ============================================================
-        // SECTION: Additional Notes (if any)
+        // ADDITIONAL NOTES
         // ============================================================
         if (booking.additionalInfo) {
             sectionHeader('Additional Notes');
 
             const notesText = booking.additionalInfo;
-            const notesHeight = doc.heightOfString(notesText, { width: contentWidth - 30 });
+            const notesHeight = doc.heightOfString(notesText, { width: contentWidth - 24 });
 
-            if (y + notesHeight + 30 > pageHeight - 60) {
-                doc.addPage();
-                y = margin;
-            }
+            checkPageBreak(notesHeight + 24);
 
-            doc.roundedRect(margin, y, contentWidth, notesHeight + 20, 6)
+            doc.roundedRect(margin, y, contentWidth, notesHeight + 14, 5)
                 .fillAndStroke(LIGHT_BG, BORDER);
 
             doc.fillColor(DARK)
-                .fontSize(10)
+                .fontSize(9)
                 .font('Helvetica')
-                .text(notesText, margin + 15, y + 10, { width: contentWidth - 30 });
+                .text(notesText, margin + 12, y + 7, { width: contentWidth - 24 });
 
-            y += notesHeight + 30;
+            y += notesHeight + 22;
         }
 
         // ============================================================
-        // SECTION: Terms & Conditions
+        // TERMS & CONDITIONS
         // ============================================================
         sectionHeader('Terms & Conditions');
 
@@ -685,72 +640,65 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         ];
 
         terms.forEach((term, idx) => {
-            if (y > pageHeight - 60) {
-                doc.addPage();
-                y = margin;
-            }
+            checkPageBreak(16);
 
             doc.fillColor(PRIMARY)
-                .fontSize(9)
+                .fontSize(8)
                 .font('Helvetica-Bold')
-                .text(`${idx + 1}.`, margin + 4, y);
+                .text(`${idx + 1}.`, margin + 3, y);
 
             doc.fillColor(DARK)
-                .fontSize(9)
+                .fontSize(8)
                 .font('Helvetica')
-                .text(term, margin + 20, y, { width: contentWidth - 20 });
+                .text(term, margin + 16, y, { width: contentWidth - 16 });
 
-            y += 16;
+            y += 13;
         });
 
-        y += 16;
+        y += 10;
 
         // ============================================================
         // IMPORTANT NOTES BOX
         // ============================================================
-        if (y > pageHeight - 120) {
-            doc.addPage();
-            y = margin;
-        }
-
         const importantNotes = [
             'Bring your original ID/passport and driving licence for verification.',
             'Your security deposit receipt must be presented at vehicle pickup.',
             'Keep this document and the attached PDF for your records.',
         ];
 
-        const notesBoxHeight = 30 + importantNotes.length * 16;
-        doc.roundedRect(margin, y, contentWidth, notesBoxHeight, 8)
+        const notesBoxHeight = 24 + importantNotes.length * 13;
+
+        // Force to page 2 if it can't fit on page 1
+        checkPageBreak(notesBoxHeight + 20);
+
+        doc.roundedRect(margin, y, contentWidth, notesBoxHeight, 6)
             .fillAndStroke('#fff7ed', '#fed7aa');
 
-        doc.rect(margin, y, 4, notesBoxHeight).fill(PRIMARY);
+        doc.rect(margin, y, 3, notesBoxHeight).fill(PRIMARY);
 
         doc.fillColor('#9f1239')
-            .fontSize(11)
+            .fontSize(9)
             .font('Helvetica-Bold')
-            .text('IMPORTANT NOTES', margin + 20, y + 12);
+            .text('IMPORTANT NOTES', margin + 16, y + 8);
 
         importantNotes.forEach((note, idx) => {
             doc.fillColor(DARK)
-                .fontSize(9)
+                .fontSize(8)
                 .font('Helvetica')
-                .text(`•  ${note}`, margin + 20, y + 32 + idx * 16, {
-                    width: contentWidth - 30,
+                .text(`•  ${note}`, margin + 16, y + 24 + idx * 13, {
+                    width: contentWidth - 24,
                 });
         });
 
-        y += notesBoxHeight + 30;
+        y += notesBoxHeight + 20;
 
         // ============================================================
         // CLOSING MESSAGE
         // ============================================================
-        if (y > pageHeight - 80) {
-            doc.addPage();
-            y = margin;
-        }
+        checkPageBreak(50);
 
         doc.fillColor(PRIMARY)
-            .fontSize(13)
+            .fontSize(11)
             .font('Helvetica-Bold')
             .text('Thank You for Choosing Vision One Services', 0, y, {
                 align: 'center',
@@ -758,55 +706,56 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             });
 
         doc.fillColor(MUTED)
-            .fontSize(9)
+            .fontSize(8)
             .font('Helvetica')
             .text(
                 'For any inquiries, please contact us at visionwanservices@gmail.com',
                 0,
-                y + 20,
+                y + 16,
                 { align: 'center', width: pageWidth }
             );
 
         // ============================================================
-        // FOOTER on every page
+        // FOOTER on every ACTUAL page (with content)
         // ============================================================
         const range = doc.bufferedPageRange();
+        const totalPages = range.count;
 
         for (let i = range.start; i < range.start + range.count; i++) {
             doc.switchToPage(i);
 
-            // Bottom border line
-            doc.moveTo(margin, pageHeight - 45)
-                .lineTo(pageWidth - margin, pageHeight - 45)
+            // Bottom border
+            doc.moveTo(margin, pageHeight - 40)
+                .lineTo(pageWidth - margin, pageHeight - 40)
                 .lineWidth(0.5)
                 .strokeColor(BORDER)
                 .stroke();
 
             doc.fillColor(MUTED)
-                .fontSize(8)
+                .fontSize(7)
                 .font('Helvetica')
                 .text(
                     `Vision One Services  •  visionwanservices.com  •  Kenya: +254 705 336 311  •  UK: +44 7397 549 590`,
                     margin,
-                    pageHeight - 38,
+                    pageHeight - 33,
                     { align: 'center', width: contentWidth }
                 );
 
             doc.fillColor(MUTED)
-                .fontSize(8)
+                .fontSize(7)
                 .text(
                     `© ${new Date().getFullYear()} Vision One Services — All rights reserved.`,
                     margin,
-                    pageHeight - 26,
+                    pageHeight - 22,
                     { align: 'center', width: contentWidth }
                 );
 
             doc.fillColor(MUTED)
-                .fontSize(8)
+                .fontSize(7)
                 .text(
-                    `Page ${i - range.start + 1} of ${range.count}`,
+                    `Page ${i - range.start + 1} of ${totalPages}`,
                     margin,
-                    pageHeight - 38,
+                    pageHeight - 33,
                     { align: 'right', width: contentWidth }
                 );
         }
