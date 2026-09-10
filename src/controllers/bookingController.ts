@@ -26,6 +26,8 @@ const formatDateTime = (dateStr?: string | null, fallback = 'N/A') => {
     return isNaN(date.getTime()) ? fallback : date.toLocaleString();
 };
 
+const LOGO_PATH = path.resolve(__dirname, '../assets/logo.png');
+
 /* -----------------------------
    Nodemailer Transporter
 --------------------------------*/
@@ -261,6 +263,16 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         doc.on('error', reject);
         doc.on('end', () => resolve(Buffer.concat(buffers)));
 
+        if (fs.existsSync(LOGO_PATH)) {
+            try {
+                doc.image(LOGO_PATH, doc.page.width / 2 - 40, 40, { width: 80, height: 80 });
+                doc.moveDown(4); // Space for the logo
+            } catch (err) {
+                console.error('Failed to add logo to PDF:', err);
+            }
+        }
+
+
         // Header
         doc.fillColor('#FF6B35').fontSize(25).text('Vision One Service', { align: 'center' });
         doc.moveDown();
@@ -383,10 +395,14 @@ const generateEmailTemplate = (booking: BookingData): string => {
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <h1>🚗 Booking Confirmed</h1>
-      <p>Thank you for choosing Vision One Services</p>
-    </div>
+  <div class="header">
+    <img src="https://www.visionwanservices.com/assets/images/logo.png"
+         alt="Vision One Services Logo"
+         width="120" height="120"
+         style="display: block; margin: 0 auto 12px; width: 100px; height: 100px; object-fit: contain; background: #fff; border-radius: 50%; padding: 6px; border: 4px solid rgba(255,255,255,0.75);" />
+    <h1>🚗 Booking Confirmed</h1>
+    <p>Thank you for choosing Vision One Services</p>
+  </div>
     <div class="content">
       <div style="text-align: center; margin-bottom: 20px;">
         <span class="badge">Booking #${booking.id}</span>
@@ -509,10 +525,14 @@ const sendAdminNotification = async (booking: BookingData, zipPath: string | nul
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <h1>📋 NEW BOOKING REQUEST</h1>
-      <p style="color: rgba(255,255,255,0.9); margin: 0;">Action Required</p>
-    </div>
+  <div class="header">
+    <img src="https://www.visionwanservices.com/assets/images/logo.png"
+         alt="Vision One Services Logo"
+         width="100" height="100"
+         style="display: block; margin: 0 auto 12px; width: 90px; height: 90px; object-fit: contain; background: #fff; border-radius: 50%; padding: 6px; border: 4px solid rgba(255,255,255,0.75);" />
+    <h1>📋 NEW BOOKING REQUEST</h1>
+    <p style="color: rgba(255,255,255,0.9); margin: 0;">Action Required</p>
+  </div>
     <div class="content">
       <div style="text-align: center; margin-bottom: 15px;">
         <span class="badge">${booking.id}</span>
