@@ -165,8 +165,21 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
     if (pickupDate && returnDate && Date.parse(returnDate) <= Date.parse(pickupDate)) {
         errors.push({ field: 'returnDate', message: 'Return date must be after pickup date' });
     }
-        if (req.body.nationality && typeof req.body.nationality !== 'string') {
+    if (req.body.nationality && typeof req.body.nationality !== 'string') {
         errors.push({ field: 'nationality', message: 'Nationality must be a string' });
+    }
+
+    // ✅ NEW: Ensure proof-of-payment file was uploaded
+    const files = req.files as any[];
+    const depositProofPresent =
+        Array.isArray(files) &&
+        files.some(f => f.fieldname === 'depositProof');
+
+    if (!depositProofPresent) {
+        errors.push({
+            field: 'depositProof',
+            message: 'Proof of payment is required'
+        });
     }
 
     if (errors.length > 0) {
@@ -186,7 +199,7 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
     req.body.idNumber = idNumber.trim();
     req.body.termsAccepted = termsAccepted === 'true' || termsAccepted === true;
     req.body.nationality = req.body.nationality?.trim() || '';
-    
+
     if (req.body.dropoffLocation) {
         req.body.dropoffLocation = req.body.dropoffLocation.trim();
     }
