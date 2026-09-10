@@ -18,6 +18,12 @@ export interface BookingData {
     idType: 'id' | 'passport';
     termsAccepted: boolean;
 
+    // ✅ NEW: Rental estimate fields
+    periodCategory?: 'short' | 'medium' | 'long';
+    dailyRate?: number;
+    estimatedTotal?: number;
+    rentalDays?: number;
+
     // File paths (will be stored on server)
     idDocumentPath?: string;
     drivingLicensePath?: string;

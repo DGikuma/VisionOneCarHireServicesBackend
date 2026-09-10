@@ -99,7 +99,7 @@ export const createBooking = async (req: Request, res: Response) => {
     try {
         // Get files from multer - using any[] because we're using .any()
         const files = req.files as any[];
-        
+
         console.log('📁 Files received:', files?.length || 0);
         if (files && files.length > 0) {
             files.forEach((file, index) => {
@@ -117,7 +117,7 @@ export const createBooking = async (req: Request, res: Response) => {
             return undefined;
         };
 
-        // Get form data
+        // ✅ FIXED: All estimate fields are now part of the object literal
         const bookingData: BookingData = {
             customerName: req.body.customerName,
             email: req.body.email,
@@ -128,10 +128,16 @@ export const createBooking = async (req: Request, res: Response) => {
             pickupLocation: req.body.pickupLocation,
             dropoffLocation: req.body.dropoffLocation,
             additionalInfo: req.body.additionalInfo,
-            nationality: req.body.nationality || '', 
+            nationality: req.body.nationality || '',
             idNumber: req.body.idNumber,
             idType: req.body.idType,
-            termsAccepted: req.body.termsAccepted === 'true' || req.body.termsAccepted === true
+            termsAccepted: req.body.termsAccepted === 'true' || req.body.termsAccepted === true,
+
+            // ✅ NEW: Estimate fields from frontend
+            periodCategory: req.body.periodCategory || undefined,
+            dailyRate: req.body.dailyRate ? Number(req.body.dailyRate) : undefined,
+            estimatedTotal: req.body.estimatedTotal ? Number(req.body.estimatedTotal) : undefined,
+            rentalDays: req.body.rentalDays ? Number(req.body.rentalDays) : undefined,
         };
 
         // Validate essential fields
@@ -192,7 +198,7 @@ export const createBooking = async (req: Request, res: Response) => {
                 customerName: bookingData.customerName,
                 email: bookingData.email,
                 phone: bookingData.phone,
-                nationality: bookingData.nationality, 
+                nationality: bookingData.nationality,
                 pickupDate: formatDate(bookingData.pickupDate),
                 returnDate: formatDate(bookingData.returnDate),
                 carType: bookingData.carType,
@@ -200,6 +206,10 @@ export const createBooking = async (req: Request, res: Response) => {
                 idNumber: bookingData.idNumber,
                 idType: bookingData.idType,
                 status,
+                periodCategory: bookingData.periodCategory,
+                dailyRate: bookingData.dailyRate,
+                estimatedTotal: bookingData.estimatedTotal,
+                rentalDays: bookingData.rentalDays,
                 bookingDate: formatDateTime(bookingWithId.bookingDate),
                 hasDocuments: {
                     idDocument: !!idDocFile,
@@ -280,6 +290,25 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         if (booking.dropoffLocation) doc.text(`Drop-off Location: ${booking.dropoffLocation}`);
         doc.moveDown();
 
+        // ✅ Rental Estimate Section
+        if (booking.estimatedTotal || booking.dailyRate) {
+            doc.fontSize(16).text('Rental Estimate:');
+            doc.fontSize(12);
+            if (booking.periodCategory) {
+                const tierLabel =
+                    booking.periodCategory === 'short' ? '1–7 days' :
+                    booking.periodCategory === 'medium' ? '7–20 days' : '20+ days';
+                doc.text(`Rate Tier: ${tierLabel}`);
+            }
+            if (booking.rentalDays) doc.text(`Rental Days: ${booking.rentalDays} day${booking.rentalDays === 1 ? '' : 's'}`);
+            if (booking.dailyRate) doc.text(`Daily Rate: KES ${booking.dailyRate.toLocaleString()}/day`);
+            if (booking.estimatedTotal) {
+                doc.fillColor('#e10b0b').fontSize(13).text(`Estimated Total: KES ${booking.estimatedTotal.toLocaleString()}`);
+                doc.fillColor('#000').fontSize(12);
+            }
+            doc.moveDown();
+        }
+
         // Security Deposit
         doc.fontSize(16).text('Security Deposit Information:');
         doc.fontSize(12).text(`Deposit Status: ${booking.depositProofPath ? 'Payment proof submitted' : 'Pending'}`);
@@ -311,20 +340,15 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
 };
 
 /* -----------------------------
-   Enhanced Email Template
---------------------------------*/
-// ======================== REPLACE THESE FUNCTIONS ========================
-
-/* -----------------------------
    Enhanced Email Template (Customer)
 --------------------------------*/
 const generateEmailTemplate = (booking: BookingData): string => {
-  const primary = '#FF6B35';
-  const secondary = '#FF8B35';
-  const dark = '#1a1a2e';
-  const lightBg = '#f8f9fa';
+    const primary = '#FF6B35';
+    const secondary = '#FF8B35';
+    const dark = '#1a1a2e';
+    const lightBg = '#f8f9fa';
 
-  return `
+    return `
 <!DOCTYPE html>
 <html>
 <head>
@@ -377,6 +401,19 @@ const generateEmailTemplate = (booking: BookingData): string => {
         <div class="info-row"><span class="info-label">Return Date</span><span class="info-value">${formatDate(booking.returnDate)}</span></div>
       </div>
 
+      ${booking.estimatedTotal || booking.dailyRate ? `
+      <div class="section">
+        <div class="section-title">💰 Rental Estimate</div>
+        ${booking.periodCategory ? `<div class="info-row"><span class="info-label">Rate Tier</span><span class="info-value">${
+          booking.periodCategory === 'short' ? '1–7 days' :
+          booking.periodCategory === 'medium' ? '7–20 days' : '20+ days'
+        }</span></div>` : ''}
+        ${booking.rentalDays ? `<div class="info-row"><span class="info-label">Rental Days</span><span class="info-value">${booking.rentalDays} day${booking.rentalDays === 1 ? '' : 's'}</span></div>` : ''}
+        ${booking.dailyRate ? `<div class="info-row"><span class="info-label">Daily Rate</span><span class="info-value">KES ${booking.dailyRate.toLocaleString()}/day</span></div>` : ''}
+        ${booking.estimatedTotal ? `<div class="info-row" style="background:#fff7ed;padding:10px 12px;border-radius:6px;margin-top:8px;"><span class="info-label" style="color:#9f1239;font-weight:700;">Estimated Total</span><span class="info-value" style="color:#e10b0b;font-size:18px;font-weight:800;">KES ${booking.estimatedTotal.toLocaleString()}</span></div>` : ''}
+      </div>
+      ` : ''}
+
       <div class="section">
         <div class="section-title">👤 Client Information</div>
         <div class="info-row"><span class="info-label">Name</span><span class="info-value">${booking.customerName}</span></div>
@@ -427,23 +464,23 @@ const generateEmailTemplate = (booking: BookingData): string => {
    Enhanced Admin Notification
 --------------------------------*/
 const sendAdminNotification = async (booking: BookingData, zipPath: string | null) => {
-  const transporter = createTransporter();
+    const transporter = createTransporter();
 
-  const attachments = [];
-  if (zipPath && fs.existsSync(zipPath)) {
-    attachments.push({
-      filename: `${booking.idNumber}_documents.zip`,
-      path: zipPath,
-      contentType: 'application/zip'
-    });
-  }
+    const attachments = [];
+    if (zipPath && fs.existsSync(zipPath)) {
+        attachments.push({
+            filename: `${booking.idNumber}_documents.zip`,
+            path: zipPath,
+            contentType: 'application/zip'
+        });
+    }
 
-  const primary = '#FF6B35';
-  const secondary = '#FF8B35';
-  const dark = '#1a1a2e';
-  const lightBg = '#f8f9fa';
+    const primary = '#FF6B35';
+    const secondary = '#FF8B35';
+    const dark = '#1a1a2e';
+    const lightBg = '#f8f9fa';
 
-  const html = `
+    const html = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -497,6 +534,19 @@ const sendAdminNotification = async (booking: BookingData, zipPath: string | nul
         ${booking.dropoffLocation ? `<div class="info-row"><span class="info-label">Drop-off</span><span class="info-value">${booking.dropoffLocation}</span></div>` : ''}
       </div>
 
+      ${booking.estimatedTotal || booking.dailyRate ? `
+      <div class="section">
+        <div class="section-title">💰 Rental Estimate</div>
+        ${booking.periodCategory ? `<div class="info-row"><span class="info-label">Rate Tier</span><span class="info-value">${
+          booking.periodCategory === 'short' ? '1–7 days' :
+          booking.periodCategory === 'medium' ? '7–20 days' : '20+ days'
+        }</span></div>` : ''}
+        ${booking.rentalDays ? `<div class="info-row"><span class="info-label">Rental Days</span><span class="info-value">${booking.rentalDays} day${booking.rentalDays === 1 ? '' : 's'}</span></div>` : ''}
+        ${booking.dailyRate ? `<div class="info-row"><span class="info-label">Daily Rate</span><span class="info-value">KES ${booking.dailyRate.toLocaleString()}/day</span></div>` : ''}
+        ${booking.estimatedTotal ? `<div class="info-row" style="background:#fff7ed;padding:10px 12px;border-radius:6px;margin-top:8px;"><span class="info-label" style="color:#9f1239;font-weight:700;">Estimated Total</span><span class="info-value" style="color:#e10b0b;font-size:18px;font-weight:800;">KES ${booking.estimatedTotal.toLocaleString()}</span></div>` : ''}
+      </div>
+      ` : ''}
+
       <div class="section">
         <div class="section-title">📎 Documents</div>
         <div class="info-row"><span class="info-label">ID Document</span><span class="info-value">${booking.idDocumentPath ? '✅ Uploaded' : '❌ Missing'}</span></div>
@@ -529,52 +579,52 @@ const sendAdminNotification = async (booking: BookingData, zipPath: string | nul
 </html>
   `;
 
-  const mailOptions = {
-    from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
-    to: process.env.ADMIN_EMAIL || 'visionwanservices@gmail.com',
-    subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})`,
-    html,
-    attachments
-  };
+    const mailOptions = {
+        from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
+        to: process.env.ADMIN_EMAIL || 'visionwanservices@gmail.com',
+        subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})${booking.estimatedTotal ? ` - KES ${booking.estimatedTotal.toLocaleString()}` : ''}`,
+        html,
+        attachments
+    };
 
-  await transporter.sendMail(mailOptions);
-  console.log(`📧 Admin notification sent for booking ${booking.id}`);
+    await transporter.sendMail(mailOptions);
+    console.log(`📧 Admin notification sent for booking ${booking.id}`);
 };
 
 /* -----------------------------
    Enhanced Customer Confirmation
 --------------------------------*/
 const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | null) => {
-  const transporter = createTransporter();
-  const pdfBuffer = await generateBookingPDF(booking);
+    const transporter = createTransporter();
+    const pdfBuffer = await generateBookingPDF(booking);
 
-  const attachments: any[] = [
-    {
-      filename: `booking-confirmation-${booking.id}.pdf`,
-      content: pdfBuffer,
-      contentType: 'application/pdf'
+    const attachments: any[] = [
+        {
+            filename: `booking-confirmation-${booking.id}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+        }
+    ];
+
+    if (zipPath && fs.existsSync(zipPath)) {
+        attachments.push({
+            filename: `${booking.idNumber}_your_documents.zip`,
+            path: zipPath,
+            contentType: 'application/zip'
+        });
     }
-  ];
 
-  if (zipPath && fs.existsSync(zipPath)) {
-    attachments.push({
-      filename: `${booking.idNumber}_your_documents.zip`,
-      path: zipPath,
-      contentType: 'application/zip'
-    });
-  }
+    const mailOptions = {
+        from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
+        to: booking.email,
+        subject: `✅ Booking Confirmed: ${booking.id} - Vision One Services`,
+        html: generateEmailTemplate(booking),
+        attachments
+    };
 
-  const mailOptions = {
-    from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
-    to: booking.email,
-    subject: `✅ Booking Confirmed: ${booking.id} - Vision One Services`,
-    html: generateEmailTemplate(booking),
-    attachments
-  };
-
-  const info = await transporter.sendMail(mailOptions);
-  console.log(`✅ Confirmation email sent to ${booking.email}: ${info.messageId}`);
-  return info;
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ Confirmation email sent to ${booking.email}: ${info.messageId}`);
+    return info;
 };
 
 // Keep existing sendBookingConfirmation function as is
