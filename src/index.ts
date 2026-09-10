@@ -27,6 +27,8 @@ const allowedOrigins = [
     // Production origins
     process.env.CLIENT_URL_PROD || 'https://visiononecarhireservicesfrontend.onrender.com',
     'https://visiononecarhireservicesfrontend.onrender.com',
+    'https://visionwanservices.com',
+    'https://www.visionwanservices.com',
     
     // API testing
     `http://localhost:${PORT}`,
