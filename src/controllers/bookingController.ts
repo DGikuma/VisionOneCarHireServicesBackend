@@ -297,20 +297,21 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         doc.rect(0, 0, pageWidth, headerHeight).fill(PRIMARY);
         doc.rect(pageWidth * 0.5, 0, pageWidth * 0.5, headerHeight).fill(SECONDARY);
 
-        // ✅ Vertical divider between left (brand) and right (document title)
-        doc.moveTo(pageWidth * 0.58, 24)
-            .lineTo(pageWidth * 0.58, headerHeight - 24)
+        // ✅ Divider moved further right (was 0.58) so the left block has more room
+        const dividerX = pageWidth * 0.62;
+        doc.moveTo(dividerX, 24)
+            .lineTo(dividerX, headerHeight - 24)
             .lineWidth(1)
             .strokeColor('rgba(255,255,255,0.35)')
             .stroke();
 
         // Logo (white circle with border)
-        const logoSize = 70;
-        const logoX = margin + 10;
+        const logoSize = 65;
+        const logoX = margin + 5;
         const logoY = (headerHeight - logoSize) / 2 + 4;
 
-        doc.circle(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2 + 4)
-            .lineWidth(3).strokeColor('#ffffff').stroke();
+        doc.circle(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2 + 3)
+            .lineWidth(2.5).strokeColor('#ffffff').stroke();
 
         if (fs.existsSync(LOGO_PATH)) {
             try {
@@ -325,42 +326,48 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             }
         }
 
-        // ✅ LEFT SIDE: Company name & tagline — constrained width so it never
-        // overlaps the document title on the right
-        const leftBlockX = logoX + logoSize + 20;
-        const leftBlockWidth = (pageWidth * 0.58) - leftBlockX - 20;
+        // ✅ LEFT SIDE: Company info — wider block, smaller fonts
+        const leftBlockX = logoX + logoSize + 15;
+        const leftBlockWidth = dividerX - leftBlockX - 15;
 
         doc.fillColor('#ffffff')
-            .fontSize(22)
+            .fontSize(18)
             .font('Helvetica-Bold')
-            .text('Vision One Services', leftBlockX, logoY + 6, {
-                width: leftBlockWidth,
-                lineBreak: false,
-            });
-
-        doc.fontSize(10)
-            .font('Helvetica')
-            .fillColor('rgba(255,255,255,0.95)')
-            .text('Premium Vehicle Rental & Mobility Solutions', leftBlockX, logoY + 36, {
+            .text('Vision One Services', leftBlockX, logoY + 4, {
                 width: leftBlockWidth,
                 lineBreak: false,
             });
 
         doc.fontSize(9)
+            .font('Helvetica')
+            .fillColor('rgba(255,255,255,0.95)')
+            .text('Premium Vehicle Rental & Mobility Solutions', leftBlockX, logoY + 30, {
+                width: leftBlockWidth,
+                lineBreak: false,
+            });
+
+        doc.fontSize(8)
             .fillColor('rgba(255,255,255,0.85)')
-            .text('Kenya: +254 705 336 311  |  UK: +44 7397 549 590', leftBlockX, logoY + 54, {
+            .text('Kenya: +254 705 336 311', leftBlockX, logoY + 48, {
+                width: leftBlockWidth,
+                lineBreak: false,
+            });
+
+        doc.fontSize(8)
+            .fillColor('rgba(255,255,255,0.85)')
+            .text('UK: +44 7397 549 590', leftBlockX, logoY + 60, {
                 width: leftBlockWidth,
                 lineBreak: false,
             });
 
         // ✅ RIGHT SIDE: Document title block — starts after the divider
-        const rightBlockX = pageWidth * 0.58 + 20;
+        const rightBlockX = dividerX + 15;
         const rightBlockWidth = pageWidth - rightBlockX - margin;
 
         doc.fillColor('#ffffff')
-            .fontSize(14)
+            .fontSize(13)
             .font('Helvetica-Bold')
-            .text('BOOKING CONFIRMATION', rightBlockX, logoY + 12, {
+            .text('BOOKING CONFIRMATION', rightBlockX, logoY + 14, {
                 align: 'right',
                 width: rightBlockWidth,
             });
@@ -368,12 +375,12 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         doc.fontSize(9)
             .font('Helvetica')
             .fillColor('rgba(255,255,255,0.95)')
-            .text(`Booking ID: ${booking.id}`, rightBlockX, logoY + 34, {
+            .text(`Booking ID: ${booking.id}`, rightBlockX, logoY + 36, {
                 align: 'right',
                 width: rightBlockWidth,
             });
 
-        doc.text(`Issued: ${formatDateTime(booking.bookingDate)}`, rightBlockX, logoY + 48, {
+        doc.text(`Issued: ${formatDateTime(booking.bookingDate)}`, rightBlockX, logoY + 50, {
             align: 'right',
             width: rightBlockWidth,
         });
