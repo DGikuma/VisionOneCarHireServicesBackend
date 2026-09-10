@@ -13,6 +13,7 @@ export interface BookingData {
     status?: 'pending' | 'confirmed' | 'cancelled';
 
     // New fields
+    nationality?: string;
     idNumber: string;
     idType: 'id' | 'passport';
     termsAccepted: boolean;

@@ -128,6 +128,7 @@ export const createBooking = async (req: Request, res: Response) => {
             pickupLocation: req.body.pickupLocation,
             dropoffLocation: req.body.dropoffLocation,
             additionalInfo: req.body.additionalInfo,
+            nationality: req.body.nationality || '', 
             idNumber: req.body.idNumber,
             idType: req.body.idType,
             termsAccepted: req.body.termsAccepted === 'true' || req.body.termsAccepted === true
@@ -191,6 +192,7 @@ export const createBooking = async (req: Request, res: Response) => {
                 customerName: bookingData.customerName,
                 email: bookingData.email,
                 phone: bookingData.phone,
+                nationality: bookingData.nationality, 
                 pickupDate: formatDate(bookingData.pickupDate),
                 returnDate: formatDate(bookingData.returnDate),
                 carType: bookingData.carType,
