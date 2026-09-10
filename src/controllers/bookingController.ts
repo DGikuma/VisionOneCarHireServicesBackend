@@ -297,6 +297,13 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         doc.rect(0, 0, pageWidth, headerHeight).fill(PRIMARY);
         doc.rect(pageWidth * 0.5, 0, pageWidth * 0.5, headerHeight).fill(SECONDARY);
 
+        // ✅ Vertical divider between left (brand) and right (document title)
+        doc.moveTo(pageWidth * 0.58, 24)
+            .lineTo(pageWidth * 0.58, headerHeight - 24)
+            .lineWidth(1)
+            .strokeColor('rgba(255,255,255,0.35)')
+            .stroke();
+
         // Logo (white circle with border)
         const logoSize = 70;
         const logoX = margin + 10;
@@ -318,41 +325,57 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             }
         }
 
-        // Company name & tagline (right of logo)
-        doc.fillColor('#ffffff')
-            .fontSize(24)
-            .font('Helvetica-Bold')
-            .text('Vision One Services', logoX + logoSize + 20, logoY + 6);
+        // ✅ LEFT SIDE: Company name & tagline — constrained width so it never
+        // overlaps the document title on the right
+        const leftBlockX = logoX + logoSize + 20;
+        const leftBlockWidth = (pageWidth * 0.58) - leftBlockX - 20;
 
-        doc.fontSize(11)
+        doc.fillColor('#ffffff')
+            .fontSize(22)
+            .font('Helvetica-Bold')
+            .text('Vision One Services', leftBlockX, logoY + 6, {
+                width: leftBlockWidth,
+                lineBreak: false,
+            });
+
+        doc.fontSize(10)
             .font('Helvetica')
             .fillColor('rgba(255,255,255,0.95)')
-            .text('Premium Vehicle Rental & Mobility Solutions', logoX + logoSize + 20, logoY + 36);
+            .text('Premium Vehicle Rental & Mobility Solutions', leftBlockX, logoY + 36, {
+                width: leftBlockWidth,
+                lineBreak: false,
+            });
 
         doc.fontSize(9)
             .fillColor('rgba(255,255,255,0.85)')
-            .text('Kenya: +254 705 336 311  |  UK: +44 7397 549 590', logoX + logoSize + 20, logoY + 54);
+            .text('Kenya: +254 705 336 311  |  UK: +44 7397 549 590', leftBlockX, logoY + 54, {
+                width: leftBlockWidth,
+                lineBreak: false,
+            });
 
-        // Document title strip on the right
+        // ✅ RIGHT SIDE: Document title block — starts after the divider
+        const rightBlockX = pageWidth * 0.58 + 20;
+        const rightBlockWidth = pageWidth - rightBlockX - margin;
+
         doc.fillColor('#ffffff')
             .fontSize(14)
             .font('Helvetica-Bold')
-            .text('BOOKING CONFIRMATION', 0, logoY + 12, {
+            .text('BOOKING CONFIRMATION', rightBlockX, logoY + 12, {
                 align: 'right',
-                width: pageWidth - margin,
+                width: rightBlockWidth,
             });
 
         doc.fontSize(9)
             .font('Helvetica')
             .fillColor('rgba(255,255,255,0.95)')
-            .text(`Booking ID: ${booking.id}`, 0, logoY + 34, {
+            .text(`Booking ID: ${booking.id}`, rightBlockX, logoY + 34, {
                 align: 'right',
-                width: pageWidth - margin,
+                width: rightBlockWidth,
             });
 
-        doc.text(`Issued: ${formatDateTime(booking.bookingDate)}`, 0, logoY + 48, {
+        doc.text(`Issued: ${formatDateTime(booking.bookingDate)}`, rightBlockX, logoY + 48, {
             align: 'right',
-            width: pageWidth - margin,
+            width: rightBlockWidth,
         });
 
         // Start content below the header
