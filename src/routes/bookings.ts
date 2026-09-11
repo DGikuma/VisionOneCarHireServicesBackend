@@ -456,22 +456,63 @@ router.get('/', (req: Request, res: Response) => {
 router.post('/lookup', async (req: Request, res: Response) => {
     try {
         const { bookingId, email } = req.body;
-        if (!bookingId && !email) {
+
+        const normalizedBookingId =
+            typeof bookingId === 'string' && bookingId.trim()
+                ? bookingId.trim()
+                : undefined;
+        const normalizedEmail =
+            typeof email === 'string' && email.trim()
+                ? email.trim().toLowerCase()
+                : undefined;
+
+        if (!normalizedBookingId && !normalizedEmail) {
             return res.status(400).json({
                 success: false,
                 error: 'Provide either bookingId or email',
             });
         }
 
-        const result = await findBookingInExcel({ bookingId, email });
+        const result = await findBookingInExcel({
+            bookingId: normalizedBookingId,
+            email: normalizedEmail,
+        });
+
         if (!result) {
-            return res.status(404).json({ success: false, error: 'Booking not found' });
+            return res
+                .status(404)
+                .json({ success: false, error: 'Booking not found' });
         }
 
-        res.json({ success: true, booking: result.data });
+        // ✅ Normalize to the exact shape the frontend expects
+        const raw: any = result.data || {};
+        const booking = {
+            id: raw.id ?? raw.bookingId ?? raw.booking_id ?? '',
+            customerName: raw.customerName ?? raw.customer_name ?? '',
+            email: raw.email ?? '',
+            phone: raw.phone ?? '',
+            nationality: raw.nationality ?? '',
+            idNumber: raw.idNumber ?? raw.id_number ?? '',
+            idType: raw.idType ?? raw.id_type ?? 'id',
+            carType: raw.carType ?? raw.car_type ?? '',
+            pickupDate: raw.pickupDate ?? raw.pickup_date ?? '',
+            returnDate: raw.returnDate ?? raw.return_date ?? '',
+            pickupLocation: raw.pickupLocation ?? raw.pickup_location ?? '',
+            dropoffLocation: raw.dropoffLocation ?? raw.dropoff_location ?? '',
+            additionalInfo: raw.additionalInfo ?? raw.additional_info ?? '',
+            periodCategory: raw.periodCategory ?? raw.period_category ?? '',
+            dailyRate: raw.dailyRate ?? raw.daily_rate ?? undefined,
+            estimatedTotal: raw.estimatedTotal ?? raw.estimated_total ?? undefined,
+            rentalDays: raw.rentalDays ?? raw.rental_days ?? undefined,
+        };
+
+        res.json({ success: true, booking });
     } catch (error) {
         console.error('Lookup error:', error);
-        res.status(500).json({ success: false, error: 'Failed to look up booking' });
+        res.status(500).json({
+            success: false,
+            error: 'Failed to look up booking',
+        });
     }
 });
 
