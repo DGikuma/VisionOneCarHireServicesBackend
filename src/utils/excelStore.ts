@@ -173,37 +173,92 @@ export async function appendBookingToExcel(booking: any): Promise<void> {
 export async function findBookingInExcel(
     lookup: { bookingId?: string; email?: string }
 ): Promise<{ rowNumber: number; data: any } | null> {
-    if (!fs.existsSync(EXCEL_PATH)) return null;
+    if (!fs.existsSync(EXCEL_PATH)) {
+        console.log('❌ Excel file does not exist at:', EXCEL_PATH);
+        return null;
+    }
 
     const workbook = await loadWorkbook();
     const sheet = workbook.getWorksheet('Bookings');
-    if (!sheet) return null;
+    if (!sheet) {
+        console.log('❌ Sheet "Bookings" not found');
+        return null;
+    }
+
+    // Strip invisible chars + trim + (optionally) lowercase for comparisons
+    const clean = (v: any): string =>
+        String(v ?? '')
+            .replace(/[\u00a0\u200b\u200c\u200d\ufeff]/g, '')
+            .trim();
+
+    // Handle ExcelJS rich-text / formula cell shapes
+    const toPlainString = (v: any): string => {
+        if (v === null || v === undefined) return '';
+        if (typeof v === 'string') return v;
+        if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+        if (typeof v === 'object') {
+            // { richText: [ { text: 'foo' }, ... ] }
+            if (Array.isArray((v as any).richText)) {
+                return (v as any).richText.map((rt: any) => rt.text ?? '').join('');
+            }
+            // { result: 'foo' }  (formula cell)
+            if ('result' in (v as any)) return String((v as any).result ?? '');
+            // { text: 'foo' }    (hyperlink cell)
+            if ('text' in (v as any)) return String((v as any).text ?? '');
+        }
+        return String(v);
+    };
+
+    const targetId = lookup.bookingId ? clean(lookup.bookingId) : '';
+    const targetEmail = lookup.email ? clean(lookup.email).toLowerCase() : '';
+
+    console.log('🔎 Lookup target:', { targetId, targetEmail });
 
     let foundRow: ExcelJS.Row | null = null;
+    let foundRowNumber = -1;
 
     sheet.eachRow((row, rowNumber) => {
         if (rowNumber === 1) return; // skip header
+        if (foundRow) return;
 
-        const bookingId = row.getCell(1).value?.toString().trim();
-        const email = row.getCell(5).value?.toString().trim().toLowerCase();
+        const rawId = row.getCell(1).value;      // "Booking ID"
+        const rawEmail = row.getCell(5).value;   // "Email"
 
-        if (
-            (lookup.bookingId && bookingId === lookup.bookingId) ||
-            (lookup.email && email === lookup.email.toLowerCase())
-        ) {
+        const rowId = clean(toPlainString(rawId));
+        const rowEmail = clean(toPlainString(rawEmail)).toLowerCase();
+
+        const idMatch = targetId && rowId === targetId;
+        const emailMatch = targetEmail && rowEmail === targetEmail;
+
+        if (idMatch || emailMatch) {
+            console.log(
+                `✅ Match on row ${rowNumber}:`,
+                { rowId, rowEmail, idMatch, emailMatch }
+            );
             foundRow = row;
+            foundRowNumber = rowNumber;
         }
     });
 
-    if (!foundRow) return null;
+    if (!foundRow) {
+        console.log('❌ No match. Rows scanned:');
+        sheet.eachRow((row, rowNumber) => {
+            if (rowNumber === 1) return;
+            const rowId = clean(toPlainString(row.getCell(1).value));
+            const rowEmail = clean(toPlainString(row.getCell(5).value));
+            console.log(`   row ${rowNumber}: id=${JSON.stringify(rowId)} email=${JSON.stringify(rowEmail)}`);
+        });
+        return null;
+    }
 
     const row = foundRow as ExcelJS.Row;
     const data: any = {};
     COLUMNS.forEach((col, idx) => {
-        data[col.key] = row.getCell(idx + 1).value;
+        const raw = row.getCell(idx + 1).value;
+        data[col.key] = toPlainString(raw);
     });
 
-    return { rowNumber: row.number, data };
+    return { rowNumber: foundRowNumber, data };
 }
 
 /**
