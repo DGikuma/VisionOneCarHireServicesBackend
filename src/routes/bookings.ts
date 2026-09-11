@@ -1,12 +1,18 @@
 import express, { Request, Response, NextFunction } from 'express';
-import { createBooking, sendBookingConfirmation } from '../controllers/bookingController';
 import { upload } from '../middlewares/upload';
+import type { BookingData } from '../types/booking';
 import {
     findBookingInExcel,
     updateBookingInExcel,
     getExcelPath,
 } from '../utils/excelStore';
-import { createDocumentsZip, sendCustomerConfirmation } from '../controllers/bookingController';
+import {
+    createBooking,
+    sendBookingConfirmation,
+    createDocumentsZip,
+    sendCustomerConfirmation,
+    sendAdminNotification,
+} from '../controllers/bookingController';
 import fs from 'fs';
 
 const router = express.Router();
@@ -480,7 +486,17 @@ router.post('/amend', upload, validateBooking, async (req: Request, res: Respons
     try {
         const { originalBookingId, originalEmail, ...newData } = req.body;
 
-        if (!originalBookingId && !originalEmail) {
+        const normalizedBookingId =
+            typeof originalBookingId === 'string' && originalBookingId.trim()
+                ? originalBookingId.trim()
+                : undefined;
+
+        const normalizedEmail =
+            typeof originalEmail === 'string' && originalEmail.trim()
+                ? originalEmail.trim().toLowerCase()
+                : undefined;
+
+        if (!normalizedBookingId && !normalizedEmail) {
             return res.status(400).json({
                 success: false,
                 error: 'originalBookingId or originalEmail is required to amend a booking',
@@ -502,24 +518,50 @@ router.post('/amend', upload, validateBooking, async (req: Request, res: Respons
         const depositProofFile = findFile(['depositProof']);
 
         const bookingId = `V1-${Date.now().toString().slice(-8)}`;
-        const bookingWithId = {
-            ...newData,
+
+        const bookingWithId: BookingData = {
+            customerName: newData.customerName,
+            email: newData.email,
+            phone: newData.phone,
+            pickupDate: newData.pickupDate,
+            returnDate: newData.returnDate,
+            carType: newData.carType,
+            pickupLocation: newData.pickupLocation,
+            dropoffLocation: newData.dropoffLocation,
+            additionalInfo: newData.additionalInfo,
+            nationality: newData.nationality,
+            idNumber: newData.idNumber,
+            idType: newData.idType,
+            termsAccepted:
+                newData.termsAccepted === 'true' || newData.termsAccepted === true,
+            periodCategory: newData.periodCategory,
+            dailyRate: newData.dailyRate ? Number(newData.dailyRate) : undefined,
+            estimatedTotal: newData.estimatedTotal
+                ? Number(newData.estimatedTotal)
+                : undefined,
+            rentalDays: newData.rentalDays ? Number(newData.rentalDays) : undefined,
             id: bookingId,
             bookingDate: new Date().toISOString(),
-            status: 'amended',
+            status: 'confirmed',
             idDocumentPath: idDocFile?.path,
             drivingLicensePath: drivingLicenseFile?.path,
             depositProofPath: depositProofFile?.path,
         };
 
         await updateBookingInExcel(
-            { bookingId: originalBookingId, email: originalEmail },
+            { bookingId: normalizedBookingId, email: normalizedEmail },
             bookingWithId
         );
 
-        // Send updated confirmation email
-        const zipPath = await createDocumentsZip(bookingWithId as any);
-        await sendCustomerConfirmation(bookingWithId as any, zipPath);
+        const zipPath = await createDocumentsZip(bookingWithId);
+        await sendCustomerConfirmation(bookingWithId, zipPath);
+
+        // ✅ Also notify admin (recommended)
+        try {
+            await sendAdminNotification(bookingWithId, zipPath);
+        } catch (adminErr) {
+            console.error('Admin amend notification failed:', adminErr);
+        }
 
         res.json({
             success: true,

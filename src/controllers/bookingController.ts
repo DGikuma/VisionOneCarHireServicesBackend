@@ -59,7 +59,7 @@ const createTransporter = () => {
 /* -----------------------------
    Create ZIP of uploaded documents
 --------------------------------*/
-const createDocumentsZip = async (booking: BookingData): Promise<string | null> => {
+export const createDocumentsZip = async (booking: BookingData): Promise<string | null> => {
     try {
         const filesToZip: string[] = [];
 
@@ -919,12 +919,12 @@ const generateEmailTemplate = (booking: BookingData): string => {
 /* -----------------------------
    Enhanced Admin Notification
 --------------------------------*/
-const sendAdminNotification = async (booking: BookingData, zipPath: string | null) => {
+export const sendAdminNotification = async (booking: BookingData, zipPath: string | null) => {
     const transporter = createTransporter();
 
     const attachments = [];
     if (zipPath && fs.existsSync(zipPath)) {
-        attachments.push({
+        attachments.push({      
             filename: `${booking.idNumber}_documents.zip`,
             path: zipPath,
             contentType: 'application/zip'
@@ -1061,7 +1061,7 @@ const sendAdminNotification = async (booking: BookingData, zipPath: string | nul
 /* -----------------------------
    Enhanced Customer Confirmation
 --------------------------------*/
-const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | null) => {
+export const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | null) => {
     const transporter = createTransporter();
     const pdfBuffer = await generateBookingPDF(booking);
 
