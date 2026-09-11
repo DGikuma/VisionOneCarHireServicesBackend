@@ -5,6 +5,12 @@ import fs from 'fs';
 import path from 'path';
 import AdmZip from 'adm-zip';
 import { BookingData } from '../types/booking';
+import {
+    appendBookingToExcel,
+    updateBookingInExcel,
+    findBookingInExcel,
+    getExcelPath,
+} from '../utils/excelStore';
 
 const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
 
@@ -183,6 +189,13 @@ export const createBooking = async (req: Request, res: Response) => {
         };
 
         bookings.push(bookingWithId);
+
+        try {
+            await appendBookingToExcel(bookingWithId);
+        } catch (excelError) {
+            console.error(`⚠️ Excel append failed for ${bookingId}:`, excelError);
+            // Don't block the booking flow — just log the error
+        }
 
         console.log(`📝 New booking created: ${bookingId} for ${bookingData.customerName}`);
         console.log(`📁 Documents uploaded:`, {
@@ -873,6 +886,20 @@ const generateEmailTemplate = (booking: BookingData): string => {
         </ul>
       </div>
 
+      <div class="highlight-box" style="margin-top: 16px; background: #ecfdf5; border-left-color: #10b981;">
+        <p><strong>🔄 Need to Amend Your Booking?</strong></p>
+        <p style="margin-top: 6px;">
+          You can update your booking details (dates, vehicle, contact info) anytime
+          by visiting your booking page and clicking "Amend Booking".
+        </p>
+        <div style="text-align: center; margin-top: 12px;">
+          <a href="${process.env.FRONTEND_URL || 'https://visionwanservices.com'}/booking?amend=${booking.id}&email=${encodeURIComponent(booking.email)}"
+             style="display: inline-block; background: #10b981; color: #fff; padding: 10px 25px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+            Amend My Booking
+          </a>
+        </div>
+      </div>
+
       <div style="text-align: center; margin: 30px 0 10px;">
         <a href="https://visionwanservices.com" class="btn">Visit Our Website</a>
       </div>
@@ -1002,6 +1029,13 @@ const sendAdminNotification = async (booking: BookingData, zipPath: string | nul
       <div style="text-align: center; margin: 20px 0;">
         <a href="mailto:${booking.email}?subject=Re: Booking ${booking.id}" style="display: inline-block; background: ${primary}; color: #fff; padding: 10px 25px; border-radius: 8px; text-decoration: none; font-weight: 600;">Reply to Customer</a>
       </div>
+
+      <div style="text-align: center; margin: 12px 0;">
+        <a href="${process.env.BACKEND_URL || 'https://visiononecarhireservicesbackend-1.onrender.com'}/api/bookings/download-excel"
+           style="display: inline-block; background: #059669; color: #fff; padding: 10px 25px; border-radius: 8px; text-decoration: none; font-weight: 600;">
+          📊 Download Bookings Excel
+        </a>
+      </div>
     </div>
     <div class="footer">
       <p>Vision One Services — Booking Management System</p>
@@ -1044,6 +1078,15 @@ const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | 
             filename: `${booking.idNumber}_your_documents.zip`,
             path: zipPath,
             contentType: 'application/zip'
+        });
+    }
+
+    const excelPath = getExcelPath();
+    if (fs.existsSync(excelPath)) {
+        attachments.push({
+            filename: `bookings-${new Date().toISOString().slice(0, 10)}.xlsx`,
+            path: excelPath,
+            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         });
     }
 

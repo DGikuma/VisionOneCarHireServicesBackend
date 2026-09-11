@@ -1,6 +1,13 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { createBooking, sendBookingConfirmation } from '../controllers/bookingController';
 import { upload } from '../middlewares/upload';
+import {
+    findBookingInExcel,
+    updateBookingInExcel,
+    getExcelPath,
+} from '../utils/excelStore';
+import { createDocumentsZip, sendCustomerConfirmation } from '../controllers/bookingController';
+import fs from 'fs';
 
 const router = express.Router();
 
@@ -431,6 +438,117 @@ router.get('/', (req: Request, res: Response) => {
         status: 'operational',
         timestamp: new Date().toISOString()
     });
+});
+
+/**
+ * @swagger
+ * /api/bookings/lookup:
+ *   post:
+ *     summary: Look up a booking by ID or email
+ *     tags: [Bookings]
+ */
+router.post('/lookup', async (req: Request, res: Response) => {
+    try {
+        const { bookingId, email } = req.body;
+        if (!bookingId && !email) {
+            return res.status(400).json({
+                success: false,
+                error: 'Provide either bookingId or email',
+            });
+        }
+
+        const result = await findBookingInExcel({ bookingId, email });
+        if (!result) {
+            return res.status(404).json({ success: false, error: 'Booking not found' });
+        }
+
+        res.json({ success: true, booking: result.data });
+    } catch (error) {
+        console.error('Lookup error:', error);
+        res.status(500).json({ success: false, error: 'Failed to look up booking' });
+    }
+});
+
+/**
+ * @swagger
+ * /api/bookings/amend:
+ *   post:
+ *     summary: Amend an existing booking
+ *     tags: [Bookings]
+ */
+router.post('/amend', upload, validateBooking, async (req: Request, res: Response) => {
+    try {
+        const { originalBookingId, originalEmail, ...newData } = req.body;
+
+        if (!originalBookingId && !originalEmail) {
+            return res.status(400).json({
+                success: false,
+                error: 'originalBookingId or originalEmail is required to amend a booking',
+            });
+        }
+
+        const files = req.files as any[];
+        const findFile = (fieldNames: string[]) => {
+            if (!Array.isArray(files)) return undefined;
+            for (const name of fieldNames) {
+                const f = files.find(x => x.fieldname === name);
+                if (f) return f;
+            }
+            return undefined;
+        };
+
+        const idDocFile = findFile(['idDocument', 'idDoc']);
+        const drivingLicenseFile = findFile(['drivingLicense', 'drivingLicence']);
+        const depositProofFile = findFile(['depositProof']);
+
+        const bookingId = `V1-${Date.now().toString().slice(-8)}`;
+        const bookingWithId = {
+            ...newData,
+            id: bookingId,
+            bookingDate: new Date().toISOString(),
+            status: 'amended',
+            idDocumentPath: idDocFile?.path,
+            drivingLicensePath: drivingLicenseFile?.path,
+            depositProofPath: depositProofFile?.path,
+        };
+
+        await updateBookingInExcel(
+            { bookingId: originalBookingId, email: originalEmail },
+            bookingWithId
+        );
+
+        // Send updated confirmation email
+        const zipPath = await createDocumentsZip(bookingWithId as any);
+        await sendCustomerConfirmation(bookingWithId as any, zipPath);
+
+        res.json({
+            success: true,
+            message: 'Booking amended successfully',
+            booking: { id: bookingId, ...newData },
+        });
+    } catch (error) {
+        console.error('Amend error:', error);
+        res.status(500).json({ success: false, error: 'Failed to amend booking' });
+    }
+});
+
+/**
+ * @swagger
+ * /api/bookings/download-excel:
+ *   get:
+ *     summary: Download the bookings Excel file
+ *     tags: [Bookings]
+ */
+router.get('/download-excel', async (req: Request, res: Response) => {
+    try {
+        const excelPath = getExcelPath();
+        if (!fs.existsSync(excelPath)) {
+            return res.status(404).json({ success: false, error: 'Excel file not found' });
+        }
+        res.download(excelPath, 'bookings.xlsx');
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Failed to download Excel file' });
+    }
 });
 
 export default router;
