@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import swaggerUi from 'swagger-ui-express';
 import swaggerJsdoc from 'swagger-jsdoc';
 import bookingRoutes from './routes/bookings';
+import agentBookingRoutes from './routes/agent_bookings';
 import contactRoutes from './routes/contact';
 import nodemailer from 'nodemailer';
 
@@ -102,7 +103,8 @@ export const emailTransporter = nodemailer.createTransport({
 /* -----------------------------
    API Routes
 --------------------------------*/
-app.use('/api/bookings', bookingRoutes);
+app.use('/api/bookings', bookingRoutes);    
+app.use('/api/agent_bookings', agentBookingRoutes);
 app.use('/api/contact', contactRoutes);
 
 /* -----------------------------
