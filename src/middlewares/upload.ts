@@ -3,12 +3,22 @@ import path from 'path';
 import fs from 'fs';
 import { Request } from 'express';
 
-// Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, '../uploads');
+/**
+ * Uploads directory.
+ * Priority: UPLOAD_DIR → DATA_DIR/uploads → <cwd>/uploads
+ */
+const uploadsDir = process.env.UPLOAD_DIR
+    ? path.resolve(process.env.UPLOAD_DIR)
+    : process.env.DATA_DIR
+    ? path.join(path.resolve(process.env.DATA_DIR), 'uploads')
+    : path.resolve(process.cwd(), 'uploads');
+
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
+    console.log(`📁 Created uploads dir: ${uploadsDir}`);
+} else {
+    console.log(`📁 Using uploads dir: ${uploadsDir}`);
 }
-
 // Configure storage
 const storage = multer.diskStorage({
     destination: (req: Request, file: Express.Multer.File, cb: (error: Error | null, destination: string) => void) => {

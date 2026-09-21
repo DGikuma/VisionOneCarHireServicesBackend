@@ -12,7 +12,15 @@ import {
     getExcelPath,
 } from '../utils/excelStore';
 
-const UPLOAD_DIR = path.resolve(process.cwd(), 'uploads');
+const UPLOAD_DIR = process.env.UPLOAD_DIR
+    ? path.resolve(process.env.UPLOAD_DIR)
+    : process.env.DATA_DIR
+    ? path.join(path.resolve(process.env.DATA_DIR), 'uploads')
+    : path.resolve(process.cwd(), 'uploads');
+
+if (!fs.existsSync(UPLOAD_DIR)) {
+    fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
 
 // In-memory storage for bookings
 const bookings: BookingData[] = [];

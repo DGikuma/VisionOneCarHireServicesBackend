@@ -436,14 +436,17 @@ router.get('/health', (req: Request, res: Response) => {
 router.get('/', (req: Request, res: Response) => {
     res.json({
         message: 'Vision Wan Car Hire Booking API',
-        version: '1.0.0',
+        version: '1.1.0',
         endpoints: [
-            { method: 'POST', path: '/api/bookings', description: 'Submit new booking with documents' },
+            { method: 'POST', path: '/api/bookings',                   description: 'Submit new booking with documents' },
+            { method: 'POST', path: '/api/bookings/lookup',            description: 'Look up a booking by ID or email' },
+            { method: 'POST', path: '/api/bookings/amend',             description: 'Amend an existing booking' },
             { method: 'POST', path: '/api/bookings/send-confirmation', description: 'Resend confirmation email' },
-            { method: 'GET', path: '/api/bookings/health', description: 'Check API health status' }
+            { method: 'GET',  path: '/api/bookings/download-excel',    description: 'Download bookings Excel file' },
+            { method: 'GET',  path: '/api/bookings/health',            description: 'Check API health status' },
         ],
         status: 'operational',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
     });
 });
 
@@ -632,69 +635,6 @@ router.get('/download-excel', async (req: Request, res: Response) => {
         res.download(excelPath, 'bookings.xlsx');
     } catch (error) {
         res.status(500).json({ success: false, error: 'Failed to download Excel file' });
-    }
-});
-
-/**
- * @swagger
- * /api/bookings/admin/migrate-old-excel:
- *   get:
- *     summary: One-off migration of the old bookings.xlsx to the new DATA_DIR (temporary route)
- *     tags: [Bookings]
- */
-router.get('/admin/migrate-old-excel', async (req: Request, res: Response) => {
-    try {
-        const oldPath = path.resolve(process.cwd(), 'storage', 'bookings.xlsx');
-        const newDir = process.env.DATA_DIR
-            ? path.resolve(process.env.DATA_DIR)
-            : path.resolve(process.cwd(), 'storage');
-        const newPath = path.join(newDir, 'bookings.xlsx');
-
-        const diagnostics = {
-            cwd: process.cwd(),
-            oldPath,
-            oldExists: fs.existsSync(oldPath),
-            newDir,
-            newPath,
-            newExists: fs.existsSync(newPath),
-        };
-
-        if (!diagnostics.oldExists) {
-            return res.status(404).json({
-                ok: false,
-                reason: 'old file not found',
-                diagnostics,
-            });
-        }
-
-        if (diagnostics.newExists) {
-            return res.status(409).json({
-                ok: false,
-                reason: 'new file already exists — refusing to overwrite',
-                diagnostics,
-            });
-        }
-
-        // Make sure the destination directory exists
-        if (!fs.existsSync(newDir)) {
-            fs.mkdirSync(newDir, { recursive: true });
-        }
-
-        fs.copyFileSync(oldPath, newPath);
-
-        console.log(`✅ Migrated Excel: ${oldPath} → ${newPath}`);
-
-        return res.json({
-            ok: true,
-            copiedFrom: oldPath,
-            copiedTo: newPath,
-        });
-    } catch (error) {
-        console.error('Migration error:', error);
-        return res.status(500).json({
-            ok: false,
-            error: (error as Error).message,
-        });
     }
 });
 

@@ -2,8 +2,28 @@ import ExcelJS from 'exceljs';
 import fs from 'fs';
 import path from 'path';
 
-const STORAGE_DIR = path.resolve(process.cwd(), 'storage');
+/**
+ * Persistent storage directory.
+ * Priority: DATA_DIR env var → <cwd>/storage
+ */
+const STORAGE_DIR = process.env.DATA_DIR
+    ? path.resolve(process.env.DATA_DIR)
+    : path.resolve(process.cwd(), 'storage');
+
 const EXCEL_PATH = path.join(STORAGE_DIR, 'bookings.xlsx');
+
+// Ensure storage directory exists (works on a fresh disk mount)
+try {
+    if (!fs.existsSync(STORAGE_DIR)) {
+        fs.mkdirSync(STORAGE_DIR, { recursive: true });
+        console.log(`📁 Created storage dir: ${STORAGE_DIR}`);
+    } else {
+        console.log(`📁 Using storage dir: ${STORAGE_DIR}`);
+    }
+} catch (err) {
+    console.error(`❌ Failed to prepare storage dir ${STORAGE_DIR}:`, err);
+    throw err;
+}
 
 // Ensure storage directory exists
 if (!fs.existsSync(STORAGE_DIR)) {
@@ -240,7 +260,8 @@ export async function findBookingInExcel(
         }
     });
 
-    if (!foundRow) {
+if (!foundRow) {
+    if (process.env.NODE_ENV !== 'production') {
         console.log('❌ No match. Rows scanned:');
         sheet.eachRow((row, rowNumber) => {
             if (rowNumber === 1) return;
@@ -248,8 +269,9 @@ export async function findBookingInExcel(
             const rowEmail = clean(toPlainString(row.getCell(5).value));
             console.log(`   row ${rowNumber}: id=${JSON.stringify(rowId)} email=${JSON.stringify(rowEmail)}`);
         });
-        return null;
     }
+    return null;
+}
 
     const row = foundRow as ExcelJS.Row;
     const data: any = {};
@@ -282,11 +304,16 @@ export async function updateBookingInExcel(
     newBooking: any
 ): Promise<void> {
     const existing = await findBookingInExcel(lookup);
-    if (existing) {
+
+    // ✅ Append the new row FIRST. If it fails, the old row is preserved.
+    await appendBookingToExcel(newBooking);
+
+    // Only remove the old row after the new one is safely on disk.
+    if (existing && existing.rowNumber) {
         await deleteBookingFromExcel(existing.rowNumber);
     }
-    await appendBookingToExcel(newBooking);
-    console.log(`♻️ Booking updated in Excel`);
+
+    console.log(`♻️ Booking updated in Excel (old row ${existing?.rowNumber ?? 'n/a'} replaced)`);
 }
 
 /**
