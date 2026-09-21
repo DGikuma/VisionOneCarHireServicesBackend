@@ -12,7 +12,7 @@ import {
     createDocumentsZip,
     sendCustomerConfirmation,
     sendAdminNotification,
-} from '../controllers/bookingController';
+} from '../controllers/agent_bookingController';
 import fs from 'fs';
 import path from 'path';
 
