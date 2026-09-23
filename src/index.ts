@@ -7,6 +7,7 @@ import bookingRoutes from './routes/bookings';
 import agentBookingRoutes from './routes/agent_bookings';
 import contactRoutes from './routes/contact';
 import feedbackRouter from './routes/feedback';
+import chatUploadRoutes from './routes/chatUpload';    
 import nodemailer from 'nodemailer';
 
 dotenv.config();
@@ -108,7 +109,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/agent_bookings', agentBookingRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/feedback', feedbackRouter);
-
+app.use('/api/chat-uploads', chatUploadRoutes);
 /* -----------------------------
    Health check
 --------------------------------*/
