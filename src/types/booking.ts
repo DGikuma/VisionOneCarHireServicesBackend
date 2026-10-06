@@ -28,6 +28,9 @@ export interface BookingData {
     idDocumentPath?: string;
     drivingLicensePath?: string;
     depositProofPath?: string;
+
+    bookingSeason?: string;   
+    festiveYear?: number; 
 }
 
 export type BookingStatus = 'pending' | 'confirmed' | 'cancelled';

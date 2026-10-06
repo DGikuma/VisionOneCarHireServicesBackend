@@ -25,6 +25,123 @@ if (!fs.existsSync(UPLOAD_DIR)) {
 // In-memory storage for bookings
 const bookings: BookingData[] = [];
 
+/* =============================================================
+   🎄 FESTIVE DECEMBER GUARD
+   Server-side source of truth for the festive window and rates.
+   This mirrors src/config/festiveRates.ts on the frontend.
+   ============================================================= */
+
+const FESTIVE_MONTH = 11; // December (0-indexed)
+const FESTIVE_SEASON_TAG = 'festive-december';
+
+interface FestiveRate {
+    short: number;   // 1–7 days
+    medium: number;  // 7–20 days
+    long: number;    // 20+ days
+}
+
+const FESTIVE_RATES: Record<string, FestiveRate> = {
+    'Fielder':    { short: 4500,  medium: 4000,  long: 3500  },
+    'Mazda CX-5': { short: 8000,  medium: 7500,  long: 7000  },
+    'Harrier':    { short: 9000,  medium: 8500,  long: 8000  },
+    'Lexus':      { short: 10000, medium: 9500,  long: 9000  },
+    'Prado':      { short: 13000, medium: 12000, long: 11000 },
+};
+
+const getFestiveYear = (): number => new Date().getFullYear();
+
+const parseDate = (dateStr?: string): Date | null => {
+    if (!dateStr) return null;
+    // Accept YYYY-MM-DD (from <input type="date">) and full ISO strings
+    const d = new Date(
+        /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? `${dateStr}T00:00:00` : dateStr
+    );
+    return isNaN(d.getTime()) ? null : d;
+};
+
+const isFestiveDate = (dateStr?: string): boolean => {
+    const d = parseDate(dateStr);
+    if (!d) return false;
+    return d.getMonth() === FESTIVE_MONTH && d.getFullYear() === getFestiveYear();
+};
+
+const getPeriodFromDays = (days: number): 'short' | 'medium' | 'long' => {
+    if (days <= 7) return 'short';
+    if (days <= 20) return 'medium';
+    return 'long';
+};
+
+/**
+ * Compute the rental duration in whole days between two dates.
+ * Returns null when either date is invalid or the range is non-positive.
+ */
+const computeRentalDays = (pickupDate?: string, returnDate?: string): number | null => {
+    const p = parseDate(pickupDate);
+    const r = parseDate(returnDate);
+    if (!p || !r) return null;
+    const days = Math.ceil((r.getTime() - p.getTime()) / (1000 * 60 * 60 * 24));
+    return days > 0 ? days : null;
+};
+
+/**
+ * Verify that a festive booking falls entirely within December of the
+ * current festive year. Returns an error message when invalid, else null.
+ */
+const assertFestiveWindow = (input: {
+    bookingSeason?: string;
+    pickupDate?: string;
+    returnDate?: string;
+}): string | null => {
+    if (input.bookingSeason !== FESTIVE_SEASON_TAG) return null; // not a festive booking
+
+    const year = getFestiveYear();
+    if (!isFestiveDate(input.pickupDate)) {
+        return `Festive bookings must start within December ${year}.`;
+    }
+    if (!isFestiveDate(input.returnDate)) {
+        return `Festive bookings must end within December ${year}.`;
+    }
+    return null;
+};
+
+/**
+ * Recompute festive pricing server-side. This prevents a tampered client
+ * from submitting arbitrary rates. Returns the corrected values or null
+ * when the vehicle is unknown.
+ */
+const computeFestivePricing = (
+    carType: string,
+    pickupDate: string,
+    returnDate: string
+): {
+    periodCategory: 'short' | 'medium' | 'long';
+    dailyRate: number;
+    estimatedTotal: number;
+    rentalDays: number;
+} | null => {
+    const days = computeRentalDays(pickupDate, returnDate);
+    if (!days) return null;
+
+    const vehicleRates =
+        FESTIVE_RATES[carType] ??
+        FESTIVE_RATES[
+            Object.keys(FESTIVE_RATES).find(
+                (k) => k.toLowerCase() === carType?.toLowerCase()
+            ) ?? ''
+        ];
+    if (!vehicleRates) return null;
+
+    const periodCategory = getPeriodFromDays(days);
+    const dailyRate = vehicleRates[periodCategory];
+
+    return {
+        periodCategory,
+        dailyRate,
+        estimatedTotal: dailyRate * days,
+        rentalDays: days,
+    };
+};
+
 /* -----------------------------
    Safe Date Utilities
 --------------------------------*/
@@ -56,11 +173,11 @@ const createTransporter = () => {
         secure: process.env.EMAIL_SECURE === 'true',
         auth: {
             user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS
+            pass: process.env.EMAIL_PASS,
         },
         connectionTimeout: 10000,
         greetingTimeout: 10000,
-        socketTimeout: 10000
+        socketTimeout: 10000,
     });
 };
 
@@ -90,18 +207,14 @@ export const createDocumentsZip = async (booking: BookingData): Promise<string |
         const zipFileName = `${booking.idNumber}_documents.zip`;
         const zipPath = path.join(UPLOAD_DIR, zipFileName);
 
-        // Add files to zip with proper names
-        filesToZip.forEach(filePath => {
+        filesToZip.forEach((filePath) => {
             const fileName = path.basename(filePath);
             zip.addLocalFile(filePath, undefined, fileName);
         });
 
-        // Write zip file
         zip.writeZip(zipPath);
-
         console.log(`ZIP created: ${zipPath}`);
         return zipPath;
-
     } catch (error) {
         console.error('Error creating ZIP:', error);
         return null;
@@ -113,27 +226,40 @@ export const createDocumentsZip = async (booking: BookingData): Promise<string |
 --------------------------------*/
 export const createBooking = async (req: Request, res: Response) => {
     try {
-        // Get files from multer - using any[] because we're using .any()
         const files = req.files as any[];
+        const isFestive = req.body.bookingSeason === FESTIVE_SEASON_TAG;
 
         console.log('📁 Files received:', files?.length || 0);
         if (files && files.length > 0) {
             files.forEach((file, index) => {
-                console.log(`   File ${index + 1}: ${file.fieldname} - ${file.originalname} (${file.mimetype})`);
+                console.log(
+                    `   File ${index + 1}: ${file.fieldname} - ${file.originalname} (${file.mimetype})`
+                );
             });
         }
 
-        // Helper to find file by field name (supports both naming conventions)
         const findFile = (fieldNames: string[]) => {
             if (!files || !Array.isArray(files)) return undefined;
             for (const fieldName of fieldNames) {
-                const file = files.find(f => f.fieldname === fieldName);
+                const file = files.find((f) => f.fieldname === fieldName);
                 if (file) return file;
             }
             return undefined;
         };
 
-        // ✅ FIXED: All estimate fields are now part of the object literal
+        /* =========================================================
+           🎄 FESTIVE WINDOW ENFORCEMENT
+           ========================================================= */
+        const festiveError = assertFestiveWindow({
+            bookingSeason: req.body.bookingSeason,
+            pickupDate: req.body.pickupDate,
+            returnDate: req.body.returnDate,
+        });
+        if (festiveError) {
+            return res.status(400).json({ success: false, error: festiveError });
+        }
+
+        // Base booking data
         const bookingData: BookingData = {
             customerName: req.body.customerName,
             email: req.body.email,
@@ -147,41 +273,78 @@ export const createBooking = async (req: Request, res: Response) => {
             nationality: req.body.nationality || '',
             idNumber: req.body.idNumber,
             idType: req.body.idType,
-            termsAccepted: req.body.termsAccepted === 'true' || req.body.termsAccepted === true,
+            termsAccepted:
+                req.body.termsAccepted === 'true' || req.body.termsAccepted === true,
 
-            // ✅ NEW: Estimate fields from frontend
+            // Estimate fields (may be recomputed below for festive bookings)
             periodCategory: req.body.periodCategory || undefined,
             dailyRate: req.body.dailyRate ? Number(req.body.dailyRate) : undefined,
-            estimatedTotal: req.body.estimatedTotal ? Number(req.body.estimatedTotal) : undefined,
+            estimatedTotal: req.body.estimatedTotal
+                ? Number(req.body.estimatedTotal)
+                : undefined,
             rentalDays: req.body.rentalDays ? Number(req.body.rentalDays) : undefined,
         };
 
         // Validate essential fields
         const requiredFields = [
-            'customerName', 'email', 'phone', 'pickupDate', 'returnDate',
-            'carType', 'pickupLocation', 'idNumber', 'idType'
+            'customerName',
+            'email',
+            'phone',
+            'pickupDate',
+            'returnDate',
+            'carType',
+            'pickupLocation',
+            'idNumber',
+            'idType',
         ];
 
-        const missingFields = requiredFields.filter(field => !bookingData[field as keyof BookingData]);
+        const missingFields = requiredFields.filter(
+            (field) => !bookingData[field as keyof BookingData]
+        );
         if (missingFields.length > 0) {
             return res.status(400).json({
                 success: false,
-                error: `Missing required fields: ${missingFields.join(', ')}`
+                error: `Missing required fields: ${missingFields.join(', ')}`,
             });
         }
 
         if (!bookingData.termsAccepted) {
             return res.status(400).json({
                 success: false,
-                error: 'Terms and conditions must be accepted'
+                error: 'Terms and conditions must be accepted',
             });
+        }
+
+        /* =========================================================
+           🎄 SERVER-SIDE FESTIVE PRICING RECALCULATION
+           Ignore client-supplied estimates for festive bookings and
+           recompute from the authoritative rate table.
+           ========================================================= */
+        if (isFestive) {
+            const festivePricing = computeFestivePricing(
+                bookingData.carType,
+                bookingData.pickupDate,
+                bookingData.returnDate
+            );
+
+            if (!festivePricing) {
+                return res.status(400).json({
+                    success: false,
+                    error:
+                        'Unable to compute festive pricing — please verify vehicle and dates.',
+                });
+            }
+
+            bookingData.periodCategory = festivePricing.periodCategory;
+            bookingData.dailyRate = festivePricing.dailyRate;
+            bookingData.estimatedTotal = festivePricing.estimatedTotal;
+            bookingData.rentalDays = festivePricing.rentalDays;
         }
 
         // Generate booking ID
         const bookingId = `V1-${Date.now().toString().slice(-8)}`;
         const status = 'confirmed';
 
-        // Find files using both possible field names
         const idDocFile = findFile(['idDocument', 'idDoc']);
         const drivingLicenseFile = findFile(['drivingLicense', 'drivingLicence']);
         const depositProofFile = findFile(['depositProof']);
@@ -193,7 +356,11 @@ export const createBooking = async (req: Request, res: Response) => {
             status,
             idDocumentPath: idDocFile?.path,
             drivingLicensePath: drivingLicenseFile?.path,
-            depositProofPath: depositProofFile?.path
+            depositProofPath: depositProofFile?.path,
+
+            // 🎄 Festive metadata (persisted to Excel + emails)
+            bookingSeason: isFestive ? FESTIVE_SEASON_TAG : undefined,
+            festiveYear: isFestive ? getFestiveYear() : undefined,
         };
 
         bookings.push(bookingWithId);
@@ -202,20 +369,24 @@ export const createBooking = async (req: Request, res: Response) => {
             await appendBookingToExcel(bookingWithId);
         } catch (excelError) {
             console.error(`⚠️ Excel append failed for ${bookingId}:`, excelError);
-            // Don't block the booking flow — just log the error
         }
 
-        console.log(`📝 New booking created: ${bookingId} for ${bookingData.customerName}`);
+        console.log(
+            `📝 New booking created: ${bookingId} for ${bookingData.customerName}` +
+                (isFestive ? ` [FESTIVE DEC ${bookingWithId.festiveYear}]` : '')
+        );
         console.log(`📁 Documents uploaded:`, {
             idDocument: !!idDocFile,
             drivingLicense: !!drivingLicenseFile,
-            depositProof: !!depositProofFile
+            depositProof: !!depositProofFile,
         });
 
         // Respond immediately
         res.status(201).json({
             success: true,
-            message: 'Booking created successfully',
+            message: isFestive
+                ? `Festive December booking created successfully`
+                : 'Booking created successfully',
             booking: {
                 id: bookingId,
                 customerName: bookingData.customerName,
@@ -234,12 +405,14 @@ export const createBooking = async (req: Request, res: Response) => {
                 estimatedTotal: bookingData.estimatedTotal,
                 rentalDays: bookingData.rentalDays,
                 bookingDate: formatDateTime(bookingWithId.bookingDate),
+                bookingSeason: bookingWithId.bookingSeason,
+                festiveYear: bookingWithId.festiveYear,
                 hasDocuments: {
                     idDocument: !!idDocFile,
                     drivingLicense: !!drivingLicenseFile,
-                    depositProof: !!depositProofFile
-                }
-            }
+                    depositProof: !!depositProofFile,
+                },
+            },
         });
 
         // Send emails in background
@@ -252,31 +425,39 @@ export const createBooking = async (req: Request, res: Response) => {
 
                 if (zipPath && fs.existsSync(zipPath)) {
                     setTimeout(() => {
-                        fs.unlinkSync(zipPath);
-                        console.log(`🗑️ Cleaned up ZIP file: ${zipPath}`);
+                        try {
+                            fs.unlinkSync(zipPath);
+                            console.log(`🗑️ Cleaned up ZIP file: ${zipPath}`);
+                        } catch (cleanupErr) {
+                            console.warn(`Cleanup failed for ${zipPath}:`, cleanupErr);
+                        }
                     }, 5000);
                 }
             } catch (emailError) {
                 console.error(`❌ Email sending failed for ${bookingId}:`, emailError);
             }
         }, 0);
-
     } catch (error) {
         console.error('❌ Booking creation error:', error);
         res.status(500).json({
             success: false,
             error: 'Failed to create booking',
-            message: process.env.NODE_ENV === 'development' ? (error as Error).message : undefined
+            message:
+                process.env.NODE_ENV === 'development'
+                    ? (error as Error).message
+                    : undefined,
         });
     }
 };
 
-
 /* -----------------------------
    Enhanced PDF Generation — Corporate Grade (2-page max)
+   Now includes a festive December banner when applicable.
 --------------------------------*/
 const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
     return new Promise((resolve, reject) => {
+        const isFestive = booking.bookingSeason === FESTIVE_SEASON_TAG;
+
         const doc = new PDFDocument({
             size: 'A4',
             margin: 50,
@@ -285,7 +466,9 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             info: {
                 Title: `Booking Confirmation — ${booking.id}`,
                 Author: 'Vision One Services',
-                Subject: 'Vehicle Rental Booking Confirmation',
+                Subject: isFestive
+                    ? 'Festive December Vehicle Rental Booking Confirmation'
+                    : 'Vehicle Rental Booking Confirmation',
                 Creator: 'Vision One Services Booking System',
             },
         });
@@ -295,11 +478,12 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         doc.on('error', reject);
         doc.on('end', () => resolve(Buffer.concat(buffers)));
 
-        // ============================================================
-        // COLOR PALETTE
-        // ============================================================
-        const PRIMARY = '#FF6B35';
-        const SECONDARY = '#FF8B35';
+        /* ============================================================
+           COLOR PALETTE
+           ============================================================ */
+        const PRIMARY = isFestive ? '#C8102E' : '#FF6B35';
+        const SECONDARY = isFestive ? '#0B6E4F' : '#FF8B35';
+        const GOLD = '#D4AF37';
         const DARK = '#1a1a2e';
         const MUTED = '#6b7280';
         const LIGHT_BG = '#f8f9fa';
@@ -312,14 +496,13 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         const margin = 50;
         const contentWidth = pageWidth - margin * 2;
 
-        // ============================================================
-        // HEADER BAND
-        // ============================================================
+        /* ============================================================
+           HEADER BAND
+           ============================================================ */
         const headerHeight = 130;
         doc.rect(0, 0, pageWidth, headerHeight).fill(PRIMARY);
         doc.rect(pageWidth * 0.5, 0, pageWidth * 0.5, headerHeight).fill(SECONDARY);
 
-        // Divider — moved to 55% so the RIGHT side has plenty of room
         const dividerX = pageWidth * 0.55;
         doc.moveTo(dividerX, 20)
             .lineTo(dividerX, headerHeight - 20)
@@ -333,7 +516,9 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         const logoY = (headerHeight - logoSize) / 2 + 2;
 
         doc.circle(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2 + 3)
-            .lineWidth(2.5).strokeColor('#ffffff').stroke();
+            .lineWidth(2.5)
+            .strokeColor('#ffffff')
+            .stroke();
 
         if (fs.existsSync(LOGO_PATH)) {
             try {
@@ -348,7 +533,7 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             }
         }
 
-        // LEFT SIDE: Company info (smaller font, tighter spacing)
+        // LEFT SIDE: Company info
         const leftBlockX = logoX + logoSize + 12;
         const leftBlockWidth = dividerX - leftBlockX - 10;
 
@@ -382,18 +567,25 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
                 lineBreak: false,
             });
 
-        // RIGHT SIDE: Document title (right-aligned, plenty of width)
+        // RIGHT SIDE: Document title
         const rightBlockX = dividerX + 12;
         const rightBlockWidth = pageWidth - rightBlockX - margin;
 
         doc.fillColor('#ffffff')
-            .fontSize(12)
+            .fontSize(isFestive ? 11 : 12)
             .font('Helvetica-Bold')
-            .text('BOOKING CONFIRMATION', rightBlockX, logoY + 10, {
-                align: 'right',
-                width: rightBlockWidth,
-                lineBreak: false,
-            });
+            .text(
+                isFestive
+                    ? `🎄 FESTIVE DEC ${booking.festiveYear ?? getFestiveYear()} — BOOKING CONFIRMATION`
+                    : 'BOOKING CONFIRMATION',
+                rightBlockX,
+                logoY + 10,
+                {
+                    align: 'right',
+                    width: rightBlockWidth,
+                    lineBreak: false,
+                }
+            );
 
         doc.fontSize(8)
             .font('Helvetica')
@@ -413,15 +605,13 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
                 lineBreak: false,
             });
 
-        // Start content below the header
         let y = headerHeight + 22;
 
-        // ============================================================
-        // HELPERS — Compact versions to fit 2 pages
-        // ============================================================
+        /* ============================================================
+           HELPERS
+           ============================================================ */
         const checkPageBreak = (needed: number) => {
             if (y + needed > pageHeight - 55) {
-                // Only add page if we're still on page 1; otherwise allow page 2 overflow
                 if (doc.bufferedPageRange().count < 2) {
                     doc.addPage();
                     y = margin;
@@ -451,7 +641,11 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             y += 26;
         };
 
-        const infoRow = (label: string, value: string, options?: { highlight?: boolean }) => {
+        const infoRow = (
+            label: string,
+            value: string,
+            options?: { highlight?: boolean }
+        ) => {
             checkPageBreak(22);
             doc.fontSize(9)
                 .font('Helvetica-Bold')
@@ -469,13 +663,42 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             y += 16;
         };
 
-        // ============================================================
-        // BOOKING SUMMARY BOX
-        // ============================================================
+        /* ============================================================
+           🎄 FESTIVE BANNER (only for festive bookings)
+           ============================================================ */
+        if (isFestive) {
+            const bannerH = 44;
+            doc.roundedRect(margin, y, contentWidth, bannerH, 6)
+                .fillAndStroke('#FFF8E7', GOLD);
+            doc.rect(margin, y, 4, bannerH).fill(PRIMARY);
+
+            doc.fillColor(PRIMARY)
+                .fontSize(11)
+                .font('Helvetica-Bold')
+                .text(
+                    `🎄 FESTIVE DECEMBER ${booking.festiveYear ?? getFestiveYear()} OFFER`,
+                    margin + 16,
+                    y + 8
+                );
+
+            doc.fillColor('#7c2d12')
+                .fontSize(8)
+                .font('Helvetica')
+                .text(
+                    'Exclusive December rates applied — festive pricing locked in at booking.',
+                    margin + 16,
+                    y + 24
+                );
+
+            y += bannerH + 14;
+        }
+
+        /* ============================================================
+           BOOKING SUMMARY BOX
+           ============================================================ */
         const summaryBoxHeight = 78;
         doc.roundedRect(margin, y, contentWidth, summaryBoxHeight, 6)
             .fillAndStroke(LIGHT_BG, BORDER);
-
         doc.rect(margin, y, 3, summaryBoxHeight).fill(PRIMARY);
 
         doc.fillColor(DARK)
@@ -491,20 +714,46 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         const summaryY = y + 40;
         const summaryCol = contentWidth / 3;
 
-        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(MUTED).text('VEHICLE', margin + 16, summaryY);
-        doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(booking.carType || '—', margin + 16, summaryY + 10);
+        doc.fontSize(7.5)
+            .font('Helvetica-Bold')
+            .fillColor(MUTED)
+            .text('VEHICLE', margin + 16, summaryY);
+        doc.fontSize(10)
+            .font('Helvetica-Bold')
+            .fillColor(DARK)
+            .text(booking.carType || '—', margin + 16, summaryY + 10);
 
-        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(MUTED).text('PICKUP', margin + 16 + summaryCol, summaryY);
-        doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(formatDate(booking.pickupDate), margin + 16 + summaryCol, summaryY + 10);
+        doc.fontSize(7.5)
+            .font('Helvetica-Bold')
+            .fillColor(MUTED)
+            .text('PICKUP', margin + 16 + summaryCol, summaryY);
+        doc.fontSize(10)
+            .font('Helvetica-Bold')
+            .fillColor(DARK)
+            .text(
+                formatDate(booking.pickupDate),
+                margin + 16 + summaryCol,
+                summaryY + 10
+            );
 
-        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(MUTED).text('RETURN', margin + 16 + summaryCol * 2, summaryY);
-        doc.fontSize(10).font('Helvetica-Bold').fillColor(DARK).text(formatDate(booking.returnDate), margin + 16 + summaryCol * 2, summaryY + 10);
+        doc.fontSize(7.5)
+            .font('Helvetica-Bold')
+            .fillColor(MUTED)
+            .text('RETURN', margin + 16 + summaryCol * 2, summaryY);
+        doc.fontSize(10)
+            .font('Helvetica-Bold')
+            .fillColor(DARK)
+            .text(
+                formatDate(booking.returnDate),
+                margin + 16 + summaryCol * 2,
+                summaryY + 10
+            );
 
         y += summaryBoxHeight + 20;
 
-        // ============================================================
-        // CUSTOMER INFORMATION
-        // ============================================================
+        /* ============================================================
+           CUSTOMER INFORMATION
+           ============================================================ */
         sectionHeader('Customer Information');
         infoRow('Full Name', booking.customerName);
         infoRow('Email Address', booking.email);
@@ -516,35 +765,44 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         );
         y += 6;
 
-        // ============================================================
-        // RENTAL DETAILS
-        // ============================================================
+        /* ============================================================
+           RENTAL DETAILS
+           ============================================================ */
         sectionHeader('Rental Details');
         infoRow('Vehicle Type', booking.carType);
         infoRow('Pickup Location', booking.pickupLocation || 'Main Office');
-        if (booking.dropoffLocation) infoRow('Drop-off Location', booking.dropoffLocation);
+        if (booking.dropoffLocation)
+            infoRow('Drop-off Location', booking.dropoffLocation);
         infoRow('Pickup Date', formatDate(booking.pickupDate));
         infoRow('Return Date', formatDate(booking.returnDate));
         y += 6;
 
-        // ============================================================
-        // RENTAL ESTIMATE
-        // ============================================================
+        /* ============================================================
+           RENTAL ESTIMATE
+           ============================================================ */
         if (booking.estimatedTotal || booking.dailyRate) {
             sectionHeader('Rental Estimate');
 
             if (booking.periodCategory) {
                 const tierLabel =
-                    booking.periodCategory === 'short' ? '1–7 days (Short-Term)' :
-                    booking.periodCategory === 'medium' ? '7–20 days (Medium-Term)' :
-                    '20+ days (Long-Term)';
+                    booking.periodCategory === 'short'
+                        ? '1–7 days (Short-Term)'
+                        : booking.periodCategory === 'medium'
+                        ? '7–20 days (Medium-Term)'
+                        : '20+ days (Long-Term)';
                 infoRow('Rate Tier', tierLabel);
             }
             if (booking.rentalDays) {
-                infoRow('Rental Duration', `${booking.rentalDays} day${booking.rentalDays === 1 ? '' : 's'}`);
+                infoRow(
+                    'Rental Duration',
+                    `${booking.rentalDays} day${booking.rentalDays === 1 ? '' : 's'}`
+                );
             }
             if (booking.dailyRate) {
-                infoRow('Daily Rate', `KES ${booking.dailyRate.toLocaleString()}/day`);
+                infoRow(
+                    'Daily Rate',
+                    `KES ${booking.dailyRate.toLocaleString()}/day`
+                );
             }
 
             if (booking.estimatedTotal) {
@@ -553,7 +811,6 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
                 const totalBoxHeight = 42;
                 doc.roundedRect(margin, y, contentWidth, totalBoxHeight, 6)
                     .fillAndStroke('#fff7ed', '#fed7aa');
-
                 doc.rect(margin, y, 3, totalBoxHeight).fill(PRIMARY);
 
                 doc.fillColor('#9f1239')
@@ -564,23 +821,29 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
                 doc.fillColor(PRIMARY)
                     .fontSize(17)
                     .font('Helvetica-Bold')
-                    .text(`KES ${booking.estimatedTotal.toLocaleString()}`, margin + 16, y + 20);
+                    .text(
+                        `KES ${booking.estimatedTotal.toLocaleString()}`,
+                        margin + 16,
+                        y + 20
+                    );
 
                 doc.fillColor(MUTED)
                     .fontSize(7)
                     .font('Helvetica')
-                    .text('Payable on vehicle pickup — subject to final inspection', 0, y + 24, {
-                        align: 'right',
-                        width: pageWidth - margin,
-                    });
+                    .text(
+                        'Payable on vehicle pickup — subject to final inspection',
+                        0,
+                        y + 24,
+                        { align: 'right', width: pageWidth - margin }
+                    );
 
                 y += totalBoxHeight + 16;
             }
         }
 
-        // ============================================================
-        // DOCUMENT CHECKLIST
-        // ============================================================
+        /* ============================================================
+           DOCUMENT CHECKLIST
+           ============================================================ */
         sectionHeader('Document Checklist');
 
         const documents = [
@@ -591,7 +854,6 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
 
         documents.forEach((docItem) => {
             checkPageBreak(22);
-
             const indicatorX = margin + 5;
             const indicatorY = y + 4;
 
@@ -612,26 +874,25 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             doc.fillColor(docItem.uploaded ? SUCCESS : DANGER)
                 .fontSize(8)
                 .font('Helvetica-Bold')
-                .text(
-                    docItem.uploaded ? '✓ Received' : '✗ Pending',
-                    0,
-                    y + 1,
-                    { align: 'right', width: pageWidth - margin }
-                );
+                .text(docItem.uploaded ? '✓ Received' : '✗ Pending', 0, y + 1, {
+                    align: 'right',
+                    width: pageWidth - margin,
+                });
 
             y += 18;
         });
 
         y += 6;
 
-        // ============================================================
-        // ADDITIONAL NOTES
-        // ============================================================
+        /* ============================================================
+           ADDITIONAL NOTES
+           ============================================================ */
         if (booking.additionalInfo) {
             sectionHeader('Additional Notes');
-
             const notesText = booking.additionalInfo;
-            const notesHeight = doc.heightOfString(notesText, { width: contentWidth - 24 });
+            const notesHeight = doc.heightOfString(notesText, {
+                width: contentWidth - 24,
+            });
 
             checkPageBreak(notesHeight + 24);
 
@@ -646,23 +907,31 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
             y += notesHeight + 22;
         }
 
-        // ============================================================
-        // TERMS & CONDITIONS
-        // ============================================================
+        /* ============================================================
+           TERMS & CONDITIONS
+           ============================================================ */
         sectionHeader('Terms & Conditions');
 
-        const terms = [
-            'Customer must present a valid driver\'s licence and ID/passport at pickup.',
-            'Security deposit is required and will be refunded upon vehicle return.',
-            'Minimum rental age is 25 years with at least 3 years driving experience.',
-            'Fuel policy: Return with the same fuel level as at pickup.',
-            'Insurance is included as per the rental agreement.',
-            'All uploaded documents will be kept strictly confidential.',
-        ];
+        const terms = isFestive
+            ? [
+                  'This booking is valid for December travel only and is subject to availability.',
+                  'Customer must present a valid driver\'s licence and ID/passport at pickup.',
+                  'Security deposit is required and will be refunded upon vehicle return.',
+                  'Minimum rental age is 25 years with at least 3 years driving experience.',
+                  'Fuel policy: Return with the same fuel level as at pickup.',
+                  'Festive rates are locked in at the time of booking and cannot be combined with other offers.',
+              ]
+            : [
+                  'Customer must present a valid driver\'s licence and ID/passport at pickup.',
+                  'Security deposit is required and will be refunded upon vehicle return.',
+                  'Minimum rental age is 25 years with at least 3 years driving experience.',
+                  'Fuel policy: Return with the same fuel level as at pickup.',
+                  'Insurance is included as per the rental agreement.',
+                  'All uploaded documents will be kept strictly confidential.',
+              ];
 
         terms.forEach((term, idx) => {
             checkPageBreak(16);
-
             doc.fillColor(PRIMARY)
                 .fontSize(8)
                 .font('Helvetica-Bold')
@@ -678,23 +947,27 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
 
         y += 10;
 
-        // ============================================================
-        // IMPORTANT NOTES BOX
-        // ============================================================
-        const importantNotes = [
-            'Bring your original ID/passport and driving licence for verification.',
-            'Your security deposit receipt must be presented at vehicle pickup.',
-            'Keep this document and the attached PDF for your records.',
-        ];
+        /* ============================================================
+           IMPORTANT NOTES BOX
+           ============================================================ */
+        const importantNotes = isFestive
+            ? [
+                  'Bring your original ID/passport and driving licence for verification.',
+                  'Your festive booking is valid for December only — changes must be requested in advance.',
+                  'Keep this document and the attached PDF for your records.',
+              ]
+            : [
+                  'Bring your original ID/passport and driving licence for verification.',
+                  'Your security deposit receipt must be presented at vehicle pickup.',
+                  'Keep this document and the attached PDF for your records.',
+              ];
 
         const notesBoxHeight = 24 + importantNotes.length * 13;
 
-        // Force to page 2 if it can't fit on page 1
         checkPageBreak(notesBoxHeight + 20);
 
         doc.roundedRect(margin, y, contentWidth, notesBoxHeight, 6)
             .fillAndStroke('#fff7ed', '#fed7aa');
-
         doc.rect(margin, y, 3, notesBoxHeight).fill(PRIMARY);
 
         doc.fillColor('#9f1239')
@@ -713,18 +986,22 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
 
         y += notesBoxHeight + 20;
 
-        // ============================================================
-        // CLOSING MESSAGE
-        // ============================================================
+        /* ============================================================
+           CLOSING MESSAGE
+           ============================================================ */
         checkPageBreak(50);
 
         doc.fillColor(PRIMARY)
             .fontSize(11)
             .font('Helvetica-Bold')
-            .text('Thank You for Choosing Vision One Services', 0, y, {
-                align: 'center',
-                width: pageWidth,
-            });
+            .text(
+                isFestive
+                    ? `🎄 Thank You for Choosing Our Festive ${booking.festiveYear ?? getFestiveYear()} Offer`
+                    : 'Thank You for Choosing Vision One Services',
+                0,
+                y,
+                { align: 'center', width: pageWidth }
+            );
 
         doc.fillColor(MUTED)
             .fontSize(8)
@@ -736,16 +1013,15 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
                 { align: 'center', width: pageWidth }
             );
 
-        // ============================================================
-        // FOOTER on every ACTUAL page (with content)
-        // ============================================================
+        /* ============================================================
+           FOOTER on every page
+           ============================================================ */
         const range = doc.bufferedPageRange();
         const totalPages = range.count;
 
         for (let i = range.start; i < range.start + range.count; i++) {
             doc.switchToPage(i);
 
-            // Bottom border
             doc.moveTo(margin, pageHeight - 40)
                 .lineTo(pageWidth - margin, pageHeight - 40)
                 .lineWidth(0.5)
@@ -789,10 +1065,24 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
    Enhanced Email Template (Customer)
 --------------------------------*/
 const generateEmailTemplate = (booking: BookingData): string => {
-    const primary = '#FF6B35';
-    const secondary = '#FF8B35';
+    const isFestive = booking.bookingSeason === FESTIVE_SEASON_TAG;
+    const primary = isFestive ? '#C8102E' : '#FF6B35';
+    const secondary = isFestive ? '#0B6E4F' : '#FF8B35';
     const dark = '#1a1a2e';
-    const lightBg = '#f8f9fa';
+    const lightBg = isFestive ? '#FFF8E7' : '#f8f9fa';
+    const gold = '#D4AF37';
+
+    const festiveBanner = isFestive
+        ? `
+      <div style="background: linear-gradient(135deg, ${primary}, ${secondary}); padding: 14px 18px; border-radius: 10px; margin-bottom: 20px; border: 2px solid ${gold}; text-align: center;">
+        <p style="margin: 0; color: #fff; font-weight: 800; letter-spacing: 1.5px; font-size: 13px; text-transform: uppercase;">
+          🎄 Festive December ${booking.festiveYear ?? getFestiveYear()} Offer
+        </p>
+        <p style="margin: 6px 0 0; color: rgba(255,255,255,0.9); font-size: 12px;">
+          Your exclusive seasonal rate has been locked in.
+        </p>
+      </div>`
+        : '';
 
     return `
 <!DOCTYPE html>
@@ -800,7 +1090,7 @@ const generateEmailTemplate = (booking: BookingData): string => {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Booking Confirmation</title>
+  <title>${isFestive ? `Festive Booking Confirmation` : 'Booking Confirmation'}</title>
   <style>
     body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background-color: ${lightBg}; }
     .container { max-width: 600px; margin: 20px auto; background: #ffffff; border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); overflow: hidden; }
@@ -834,10 +1124,11 @@ const generateEmailTemplate = (booking: BookingData): string => {
          alt="Vision One Services Logo"
          width="120" height="120"
          style="display: block; margin: 0 auto 12px; width: 100px; height: 100px; object-fit: contain; background: #fff; border-radius: 50%; padding: 6px; border: 4px solid rgba(255,255,255,0.75);" />
-    <h1>🚗 Booking Confirmed</h1>
+    <h1>${isFestive ? '🎄 Festive Booking Confirmed' : '🚗 Booking Confirmed'}</h1>
     <p>Thank you for choosing Vision One Services</p>
   </div>
     <div class="content">
+      ${festiveBanner}
       <div style="text-align: center; margin-bottom: 20px;">
         <span class="badge">Booking #${booking.id}</span>
       </div>
@@ -891,6 +1182,7 @@ const generateEmailTemplate = (booking: BookingData): string => {
           <li>You'll receive a confirmation call within 24 hours.</li>
           <li>Bring your original ID and driving license for verification.</li>
           <li>Keep this email and the attached PDF for your records.</li>
+          ${isFestive ? '<li>Your festive booking is valid for December only — changes must be requested in advance.</li>' : ''}
         </ul>
       </div>
 
@@ -927,20 +1219,24 @@ const generateEmailTemplate = (booking: BookingData): string => {
 /* -----------------------------
    Enhanced Admin Notification
 --------------------------------*/
-export const sendAdminNotification = async (booking: BookingData, zipPath: string | null) => {
+export const sendAdminNotification = async (
+    booking: BookingData,
+    zipPath: string | null
+) => {
     const transporter = createTransporter();
+    const isFestive = booking.bookingSeason === FESTIVE_SEASON_TAG;
 
     const attachments = [];
     if (zipPath && fs.existsSync(zipPath)) {
-        attachments.push({      
+        attachments.push({
             filename: `${booking.idNumber}_documents.zip`,
             path: zipPath,
-            contentType: 'application/zip'
+            contentType: 'application/zip',
         });
     }
 
-    const primary = '#FF6B35';
-    const secondary = '#FF8B35';
+    const primary = isFestive ? '#C8102E' : '#FF6B35';
+    const secondary = isFestive ? '#0B6E4F' : '#FF8B35';
     const dark = '#1a1a2e';
     const lightBg = '#f8f9fa';
 
@@ -957,13 +1253,14 @@ export const sendAdminNotification = async (booking: BookingData, zipPath: strin
     .header { background: linear-gradient(135deg, ${primary}, ${secondary}); padding: 25px; text-align: center; }
     .header h1 { color: #fff; margin: 0; font-size: 26px; }
     .content { padding: 25px; }
-    .badge { display: inline-block; background: #dc2626; color: #fff; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+    .badge { display: inline-block; background: ${isFestive ? '#D4AF37' : '#dc2626'}; color: ${isFestive ? '#3a2b00' : '#fff'}; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; }
     .section { margin-bottom: 20px; }
     .section-title { color: ${dark}; font-size: 18px; font-weight: 700; border-bottom: 2px solid ${primary}; padding-bottom: 6px; margin-bottom: 12px; }
     .info-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #eee; }
     .info-label { color: #666; font-weight: 600; font-size: 14px; }
     .info-value { color: ${dark}; font-weight: 500; font-size: 14px; text-align: right; }
     .alert-box { background: #fee2e2; border-left: 4px solid #dc2626; padding: 15px; border-radius: 4px; margin: 20px 0; }
+    .festive-box { background: #FFF8E7; border-left: 4px solid ${isFestive ? '#D4AF37' : primary}; padding: 14px 18px; border-radius: 4px; margin: 0 0 20px; }
     .footer { background: ${lightBg}; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #eee; }
     @media (max-width: 480px) {
       .info-row { flex-direction: column; align-items: flex-start; gap: 4px; }
@@ -978,10 +1275,19 @@ export const sendAdminNotification = async (booking: BookingData, zipPath: strin
          alt="Vision One Services Logo"
          width="100" height="100"
          style="display: block; margin: 0 auto 12px; width: 90px; height: 90px; object-fit: contain; background: #fff; border-radius: 50%; padding: 6px; border: 4px solid rgba(255,255,255,0.75);" />
-    <h1>📋 NEW BOOKING REQUEST</h1>
+    <h1>${isFestive ? '🎄 NEW FESTIVE BOOKING' : '📋 NEW BOOKING REQUEST'}</h1>
     <p style="color: rgba(255,255,255,0.9); margin: 0;">Action Required</p>
   </div>
     <div class="content">
+      ${isFestive ? `
+        <div class="festive-box">
+          <p style="margin: 0; color: #7c2d12; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; font-size: 12px;">
+            🎄 December ${booking.festiveYear ?? getFestiveYear()} Festive Offer
+          </p>
+          <p style="margin: 6px 0 0; color: #7c2d12; font-size: 13px;">
+            Festive rates applied and validated server-side.
+          </p>
+        </div>` : ''}
       <div style="text-align: center; margin-bottom: 15px;">
         <span class="badge">${booking.id}</span>
       </div>
@@ -1055,37 +1361,52 @@ export const sendAdminNotification = async (booking: BookingData, zipPath: strin
   `;
 
     const mailOptions = {
-        from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
+        from:
+            process.env.EMAIL_FROM ||
+            '"Vision One Services" <bookings@visiononecarhire.com>',
         to: process.env.ADMIN_EMAIL || 'visionwanservices@gmail.com',
-        subject: `📋 NEW BOOKING: ${booking.carType} - ${booking.customerName} (${booking.idNumber})${booking.estimatedTotal ? ` - KES ${booking.estimatedTotal.toLocaleString()}` : ''}`,
+        subject: `${isFestive ? '🎄 FESTIVE ' : ''}NEW BOOKING: ${booking.carType} - ${
+            booking.customerName
+        } (${booking.idNumber})${
+            booking.estimatedTotal
+                ? ` - KES ${booking.estimatedTotal.toLocaleString()}`
+                : ''
+        }`,
         html,
-        attachments
+        attachments,
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`📧 Admin notification sent for booking ${booking.id}`);
+    console.log(
+        `📧 Admin notification sent for booking ${booking.id}` +
+            (isFestive ? ` [FESTIVE DEC ${booking.festiveYear}]` : '')
+    );
 };
 
 /* -----------------------------
    Enhanced Customer Confirmation
 --------------------------------*/
-export const sendCustomerConfirmation = async (booking: BookingData, zipPath: string | null) => {
+export const sendCustomerConfirmation = async (
+    booking: BookingData,
+    zipPath: string | null
+) => {
     const transporter = createTransporter();
     const pdfBuffer = await generateBookingPDF(booking);
+    const isFestive = booking.bookingSeason === FESTIVE_SEASON_TAG;
 
     const attachments: any[] = [
         {
             filename: `booking-confirmation-${booking.id}.pdf`,
             content: pdfBuffer,
-            contentType: 'application/pdf'
-        }
+            contentType: 'application/pdf',
+        },
     ];
 
     if (zipPath && fs.existsSync(zipPath)) {
         attachments.push({
             filename: `${booking.idNumber}_your_documents.zip`,
             path: zipPath,
-            contentType: 'application/zip'
+            contentType: 'application/zip',
         });
     }
 
@@ -1094,24 +1415,31 @@ export const sendCustomerConfirmation = async (booking: BookingData, zipPath: st
         attachments.push({
             filename: `bookings-${new Date().toISOString().slice(0, 10)}.xlsx`,
             path: excelPath,
-            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            contentType:
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         });
     }
 
     const mailOptions = {
-        from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
+        from:
+            process.env.EMAIL_FROM ||
+            '"Vision One Services" <bookings@visiononecarhire.com>',
         to: booking.email,
-        subject: `✅ Booking Confirmed: ${booking.id} - Vision One Services`,
+        subject: `${isFestive ? '🎄' : '✅'} Booking Confirmed: ${booking.id} - Vision One Services`,
         html: generateEmailTemplate(booking),
-        attachments
+        attachments,
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✅ Confirmation email sent to ${booking.email}: ${info.messageId}`);
+    console.log(
+        `✅ Confirmation email sent to ${booking.email}: ${info.messageId}`
+    );
     return info;
 };
 
-// Keep existing sendBookingConfirmation function as is
+/* -----------------------------
+   Resend Booking Confirmation
+--------------------------------*/
 export const sendBookingConfirmation = async (req: Request, res: Response) => {
     try {
         const { bookingId } = req.body;
@@ -1119,37 +1447,39 @@ export const sendBookingConfirmation = async (req: Request, res: Response) => {
         if (!bookingId) {
             return res.status(400).json({
                 success: false,
-                error: 'bookingId is required'
+                error: 'bookingId is required',
             });
         }
 
-        const booking = bookings.find(b => b.id === bookingId);
+        const booking = bookings.find((b) => b.id === bookingId);
 
         if (!booking) {
             return res.status(404).json({
                 success: false,
-                error: 'Booking not found'
+                error: 'Booking not found',
             });
         }
 
         const zipPath = await createDocumentsZip(booking);
         await sendCustomerConfirmation(booking, zipPath);
 
-        // Clean up
         if (zipPath && fs.existsSync(zipPath)) {
-            fs.unlinkSync(zipPath);
+            try {
+                fs.unlinkSync(zipPath);
+            } catch (cleanupErr) {
+                console.warn(`Cleanup failed for ${zipPath}:`, cleanupErr);
+            }
         }
 
         res.json({
             success: true,
-            message: 'Confirmation email sent successfully'
+            message: 'Confirmation email sent successfully',
         });
-
     } catch (error) {
         console.error('❌ Resend confirmation error:', error);
         res.status(500).json({
             success: false,
-            error: 'Failed to resend confirmation email'
+            error: 'Failed to resend confirmation email',
         });
     }
 };
