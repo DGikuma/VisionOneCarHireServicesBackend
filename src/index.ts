@@ -7,7 +7,8 @@ import bookingRoutes from './routes/bookings';
 import agentBookingRoutes from './routes/agent_bookings';
 import contactRoutes from './routes/contact';
 import feedbackRouter from './routes/feedback';
-import chatUploadRoutes from './routes/chatUpload';    
+import chatUploadRoutes from './routes/chatUpload'; 
+import travelEnquiriesRouter from './routes/travelEnquiries';
 import nodemailer from 'nodemailer';
 
 dotenv.config();
@@ -107,6 +108,7 @@ export const emailTransporter = nodemailer.createTransport({
 --------------------------------*/
 app.use('/api/bookings', bookingRoutes);    
 app.use('/api/agent_bookings', agentBookingRoutes);
+app.use('/api/travel-enquiries', travelEnquiriesRouter);
 app.use('/api/contact', contactRoutes);
 app.use('/api/feedback', feedbackRouter);
 app.use('/api/chat-uploads', chatUploadRoutes);
@@ -155,7 +157,16 @@ app.use((req, res) => {
     res.status(404).json({
         error: 'Route not found',
         requestedUrl: req.originalUrl,
-        availableEndpoints: ['/api/bookings', '/api/contact', '/api/docs', '/api/health'],
+        availableEndpoints: [
+        '/api/bookings',
+        '/api/agent_bookings',
+        '/api/travel-enquiries',
+        '/api/contact',
+        '/api/feedback',
+        '/api/chat-uploads',
+        '/api/docs',
+        '/api/health',
+    ],
     });
 });
 
