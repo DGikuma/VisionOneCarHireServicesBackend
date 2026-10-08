@@ -24,6 +24,9 @@ export interface BookingData {
     estimatedTotal?: number;
     rentalDays?: number;
 
+    // ✅ NEW: Agent reference code (unique per agent per booking)
+    agentReferenceCode: string;
+
     // File paths (will be stored on server)
     idDocumentPath?: string;
     drivingLicensePath?: string;

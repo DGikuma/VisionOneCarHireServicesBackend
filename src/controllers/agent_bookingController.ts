@@ -4,7 +4,7 @@ import PDFDocument from 'pdfkit';
 import fs from 'fs';
 import path from 'path';
 import AdmZip from 'adm-zip';
-import { BookingData } from '../types/booking';
+import { BookingData } from '../types/agent_booking';
 import {
     appendBookingToExcel,
     updateBookingInExcel,
@@ -133,7 +133,7 @@ export const createBooking = async (req: Request, res: Response) => {
             return undefined;
         };
 
-        // ✅ FIXED: All estimate fields are now part of the object literal
+        // ✅ FIXED: All estimate fields + agent reference code included
         const bookingData: BookingData = {
             customerName: req.body.customerName,
             email: req.body.email,
@@ -149,7 +149,10 @@ export const createBooking = async (req: Request, res: Response) => {
             idType: req.body.idType,
             termsAccepted: req.body.termsAccepted === 'true' || req.body.termsAccepted === true,
 
-            // ✅ NEW: Estimate fields from frontend
+            // ✅ Agent reference code (validated by route middleware)
+            agentReferenceCode: req.body.agentReferenceCode,
+
+            // ✅ Estimate fields from frontend
             periodCategory: req.body.periodCategory || undefined,
             dailyRate: req.body.dailyRate ? Number(req.body.dailyRate) : undefined,
             estimatedTotal: req.body.estimatedTotal ? Number(req.body.estimatedTotal) : undefined,
@@ -159,7 +162,7 @@ export const createBooking = async (req: Request, res: Response) => {
         // Validate essential fields
         const requiredFields = [
             'customerName', 'email', 'phone', 'pickupDate', 'returnDate',
-            'carType', 'pickupLocation', 'idNumber', 'idType'
+            'carType', 'pickupLocation', 'idNumber', 'idType', 'agentReferenceCode'
         ];
 
         const missingFields = requiredFields.filter(field => !bookingData[field as keyof BookingData]);
@@ -205,7 +208,7 @@ export const createBooking = async (req: Request, res: Response) => {
             // Don't block the booking flow — just log the error
         }
 
-        console.log(`📝 New Agent booking created: ${bookingId} for ${bookingData.customerName}`);
+        console.log(`📝 New Agent booking created: ${bookingId} [${bookingData.agentReferenceCode}] for ${bookingData.customerName}`);
         console.log(`📁 Documents uploaded:`, {
             idDocument: !!idDocFile,
             drivingLicense: !!drivingLicenseFile,
@@ -229,6 +232,10 @@ export const createBooking = async (req: Request, res: Response) => {
                 idNumber: bookingData.idNumber,
                 idType: bookingData.idType,
                 status,
+
+                // ✅ Agent reference code
+                agentReferenceCode: bookingData.agentReferenceCode,
+
                 periodCategory: bookingData.periodCategory,
                 dailyRate: bookingData.dailyRate,
                 estimatedTotal: bookingData.estimatedTotal,
@@ -503,6 +510,39 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
         y += summaryBoxHeight + 20;
 
         // ============================================================
+        // AGENT REFERENCE (highlighted, prominent)
+        // ============================================================
+        if (booking.agentReferenceCode) {
+            checkPageBreak(60);
+
+            const refBoxHeight = 46;
+            doc.roundedRect(margin, y, contentWidth, refBoxHeight, 6)
+                .fillAndStroke('#fff7ed', '#fed7aa');
+
+            doc.rect(margin, y, 3, refBoxHeight).fill(PRIMARY);
+
+            doc.fillColor('#9f1239')
+                .fontSize(8)
+                .font('Helvetica-Bold')
+                .text('AGENT REFERENCE CODE', margin + 16, y + 8);
+
+            doc.fillColor(PRIMARY)
+                .fontSize(15)
+                .font('Helvetica-Bold')
+                .text(booking.agentReferenceCode, margin + 16, y + 22);
+
+            doc.fillColor(MUTED)
+                .fontSize(7)
+                .font('Helvetica')
+                .text('Quote this code in all correspondence about this booking', 0, y + 26, {
+                    align: 'right',
+                    width: pageWidth - margin,
+                });
+
+            y += refBoxHeight + 16;
+        }
+
+        // ============================================================
         // CUSTOMER INFORMATION
         // ============================================================
         sectionHeader('Customer Information');
@@ -535,9 +575,8 @@ const generateBookingPDF = (booking: BookingData): Promise<Buffer> => {
 
             if (booking.periodCategory) {
                 const tierLabel =
-                    booking.periodCategory === 'short' ? '1–7 days (Short-Term)' :
-                    booking.periodCategory === 'medium' ? '7–20 days (Medium-Term)' :
-                    '20+ days (Long-Term)';
+                    booking.periodCategory === 'short' ? '1 day (Short-Term)' :
+                    '2+ days (Long-Term)';
                 infoRow('Rate Tier', tierLabel);
             }
             if (booking.rentalDays) {
@@ -842,6 +881,18 @@ const generateEmailTemplate = (booking: BookingData): string => {
         <span class="badge">Booking #${booking.id}</span>
       </div>
 
+      ${booking.agentReferenceCode ? `
+      <div style="text-align: center; margin-bottom: 24px;">
+        <div style="display: inline-block; padding: 12px 24px; border-radius: 10px; background: #FFF8E7; border: 1.5px dashed #D4AF37;">
+          <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.6px; color: #7c5a00; text-transform: uppercase; margin-bottom: 4px;">
+            Agent Reference
+          </div>
+          <div style="font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 18px; font-weight: 800; color: #e10b0b; letter-spacing: 0.5px;">
+            ${booking.agentReferenceCode}
+          </div>
+        </div>
+      </div>` : ''}
+
       <div class="section">
         <div class="section-title">📋 Reservation Details</div>
         <div class="info-row"><span class="info-label">Vehicle</span><span class="info-value">${booking.carType}</span></div>
@@ -855,8 +906,7 @@ const generateEmailTemplate = (booking: BookingData): string => {
       <div class="section">
         <div class="section-title">💰 Rental Estimate</div>
         ${booking.periodCategory ? `<div class="info-row"><span class="info-label">Rate Tier</span><span class="info-value">${
-          booking.periodCategory === 'short' ? '1–7 days' :
-          booking.periodCategory === 'medium' ? '7–20 days' : '20+ days'
+          booking.periodCategory === 'short' ? '1 day' : '2+ days'
         }</span></div>` : ''}
         ${booking.rentalDays ? `<div class="info-row"><span class="info-label">Rental Days</span><span class="info-value">${booking.rentalDays} day${booking.rentalDays === 1 ? '' : 's'}</span></div>` : ''}
         ${booking.dailyRate ? `<div class="info-row"><span class="info-label">Daily Rate</span><span class="info-value">KES ${booking.dailyRate.toLocaleString()}/day</span></div>` : ''}
@@ -901,7 +951,7 @@ const generateEmailTemplate = (booking: BookingData): string => {
           by visiting your booking page and clicking "Amend Booking".
         </p>
         <div style="text-align: center; margin-top: 12px;">
-          <a href="${process.env.FRONTEND_URL || 'https://visionwanservices.com'}/booking?amend=${booking.id}&email=${encodeURIComponent(booking.email)}"
+          <a href="${process.env.FRONTEND_URL || 'https://visionwanservices.com'}/agent-booking?amend=${booking.id}&email=${encodeURIComponent(booking.email)}"
              style="display: inline-block; background: #10b981; color: #fff; padding: 10px 25px; border-radius: 8px; text-decoration: none; font-weight: 600;">
             Amend My Booking
           </a>
@@ -932,7 +982,7 @@ export const sendAdminNotification = async (booking: BookingData, zipPath: strin
 
     const attachments = [];
     if (zipPath && fs.existsSync(zipPath)) {
-        attachments.push({      
+        attachments.push({
             filename: `${booking.idNumber}_documents.zip`,
             path: zipPath,
             contentType: 'application/zip'
@@ -964,6 +1014,7 @@ export const sendAdminNotification = async (booking: BookingData, zipPath: strin
     .info-label { color: #666; font-weight: 600; font-size: 14px; }
     .info-value { color: ${dark}; font-weight: 500; font-size: 14px; text-align: right; }
     .alert-box { background: #fee2e2; border-left: 4px solid #dc2626; padding: 15px; border-radius: 4px; margin: 20px 0; }
+    .agent-ref-box { background: #FFF8E7; border: 1.5px dashed #D4AF37; padding: 14px 18px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
     .footer { background: ${lightBg}; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #eee; }
     @media (max-width: 480px) {
       .info-row { flex-direction: column; align-items: flex-start; gap: 4px; }
@@ -986,6 +1037,16 @@ export const sendAdminNotification = async (booking: BookingData, zipPath: strin
         <span class="badge">${booking.id}</span>
       </div>
 
+      ${booking.agentReferenceCode ? `
+      <div class="agent-ref-box">
+        <div style="font-size: 10px; font-weight: 800; letter-spacing: 1.6px; color: #7c5a00; text-transform: uppercase; margin-bottom: 6px;">
+          🏷️ Agent Reference Code
+        </div>
+        <div style="font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 22px; font-weight: 800; color: #e10b0b; letter-spacing: 0.6px;">
+          ${booking.agentReferenceCode}
+        </div>
+      </div>` : ''}
+
       <div class="section">
         <div class="section-title">👤 Customer</div>
         <div class="info-row"><span class="info-label">Name</span><span class="info-value">${booking.customerName}</span></div>
@@ -1006,8 +1067,7 @@ export const sendAdminNotification = async (booking: BookingData, zipPath: strin
       <div class="section">
         <div class="section-title">💰 Rental Estimate</div>
         ${booking.periodCategory ? `<div class="info-row"><span class="info-label">Rate Tier</span><span class="info-value">${
-          booking.periodCategory === 'short' ? '1–7 days' :
-          booking.periodCategory === 'medium' ? '7–20 days' : '20+ days'
+          booking.periodCategory === 'short' ? '1 day' : '2+ days'
         }</span></div>` : ''}
         ${booking.rentalDays ? `<div class="info-row"><span class="info-label">Rental Days</span><span class="info-value">${booking.rentalDays} day${booking.rentalDays === 1 ? '' : 's'}</span></div>` : ''}
         ${booking.dailyRate ? `<div class="info-row"><span class="info-label">Daily Rate</span><span class="info-value">KES ${booking.dailyRate.toLocaleString()}/day</span></div>` : ''}
@@ -1035,11 +1095,11 @@ export const sendAdminNotification = async (booking: BookingData, zipPath: strin
       </div>
 
       <div style="text-align: center; margin: 20px 0;">
-        <a href="mailto:${booking.email}?subject=Re: Booking ${booking.id}" style="display: inline-block; background: ${primary}; color: #fff; padding: 10px 25px; border-radius: 8px; text-decoration: none; font-weight: 600;">Reply to Customer</a>
+        <a href="mailto:${booking.email}?subject=Re: Booking ${booking.id} [${booking.agentReferenceCode || ''}]" style="display: inline-block; background: ${primary}; color: #fff; padding: 10px 25px; border-radius: 8px; text-decoration: none; font-weight: 600;">Reply to Customer</a>
       </div>
 
       <div style="text-align: center; margin: 12px 0;">
-        <a href="${process.env.BACKEND_URL || 'https://visiononecarhireservicesbackend-1.onrender.com'}/api/bookings/download-excel"
+        <a href="${process.env.BACKEND_URL || 'https://visiononecarhireservicesbackend-1.onrender.com'}/api/agent_bookings/download-excel"
            style="display: inline-block; background: #059669; color: #fff; padding: 10px 25px; border-radius: 8px; text-decoration: none; font-weight: 600;">
           📊 Download Bookings Excel
         </a>
@@ -1057,13 +1117,13 @@ export const sendAdminNotification = async (booking: BookingData, zipPath: strin
     const mailOptions = {
         from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
         to: process.env.ADMIN_EMAIL || 'visionwanservices@gmail.com',
-        subject: `📋 New Agent booking: ${booking.carType} - ${booking.customerName} (${booking.idNumber})${booking.estimatedTotal ? ` - KES ${booking.estimatedTotal.toLocaleString()}` : ''}`,
+        subject: `📋 New Agent booking [${booking.agentReferenceCode}]: ${booking.carType} - ${booking.customerName} (${booking.idNumber})${booking.estimatedTotal ? ` - KES ${booking.estimatedTotal.toLocaleString()}` : ''}`,
         html,
         attachments
     };
 
     await transporter.sendMail(mailOptions);
-    console.log(`📧 Admin notification sent for booking ${booking.id}`);
+    console.log(`📧 Admin notification sent for booking ${booking.id} [${booking.agentReferenceCode}]`);
 };
 
 /* -----------------------------
@@ -1101,7 +1161,7 @@ export const sendCustomerConfirmation = async (booking: BookingData, zipPath: st
     const mailOptions = {
         from: process.env.EMAIL_FROM || '"Vision One Services" <bookings@visiononecarhire.com>',
         to: booking.email,
-        subject: `✅ Booking Confirmed: ${booking.id} - Vision One Services`,
+        subject: `✅ Booking Confirmed: ${booking.id}${booking.agentReferenceCode ? ` [${booking.agentReferenceCode}]` : ''} - Vision One Services`,
         html: generateEmailTemplate(booking),
         attachments
     };

@@ -1,6 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { upload } from '../middlewares/upload';
-import type { BookingData } from '../types/booking';
+import type { BookingData } from '../types/agent_booking';
 import {
     findBookingInExcel,
     updateBookingInExcel,
@@ -157,7 +157,8 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
         pickupLocation,
         idNumber,
         idType,
-        termsAccepted
+        termsAccepted,
+        agentReferenceCode,   // ✅ NEW
     } = req.body;
 
     const errors: { field: string; message: string }[] = [];
@@ -175,6 +176,25 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
     if (!idNumber?.trim()) errors.push({ field: 'idNumber', message: 'ID/Passport number is required' });
     if (!idType || !['id', 'passport'].includes(idType)) errors.push({ field: 'idType', message: 'Valid ID type is required (id or passport)' });
     if (!termsAccepted || termsAccepted === 'false') errors.push({ field: 'termsAccepted', message: 'Terms and conditions must be accepted' });
+
+    // ✅ NEW: Agent reference code is required and must match a safe pattern
+    if (!agentReferenceCode?.trim()) {
+        errors.push({
+            field: 'agentReferenceCode',
+            message: 'Agent reference code is required',
+        });
+    } else {
+        const trimmed = String(agentReferenceCode).trim();
+        // 4–32 chars, letters/numbers/dashes only — prevents injection + typos
+        const codeRegex = /^[A-Za-z0-9-]{4,32}$/;
+        if (!codeRegex.test(trimmed)) {
+            errors.push({
+                field: 'agentReferenceCode',
+                message:
+                    'Reference code must be 4–32 characters (letters, numbers, and dashes only)',
+            });
+        }
+    }
 
     if (pickupDate && returnDate && Date.parse(returnDate) <= Date.parse(pickupDate)) {
         errors.push({ field: 'returnDate', message: 'Return date must be after pickup date' });
@@ -213,6 +233,9 @@ const validateBooking = (req: Request, res: Response, next: NextFunction) => {
     req.body.idNumber = idNumber.trim();
     req.body.termsAccepted = termsAccepted === 'true' || termsAccepted === true;
     req.body.nationality = req.body.nationality?.trim() || '';
+
+    // ✅ NEW: normalize the agent reference code (uppercase for consistency)
+    req.body.agentReferenceCode = String(agentReferenceCode).trim().toUpperCase();
 
     if (req.body.dropoffLocation) {
         req.body.dropoffLocation = req.body.dropoffLocation.trim();
@@ -508,8 +531,16 @@ router.post('/lookup', async (req: Request, res: Response) => {
             dailyRate: raw.dailyRate ?? raw.daily_rate ?? undefined,
             estimatedTotal: raw.estimatedTotal ?? raw.estimated_total ?? undefined,
             rentalDays: raw.rentalDays ?? raw.rental_days ?? undefined,
+        
+            // ✅ NEW
+            agentReferenceCode:
+                raw.agentReferenceCode ??
+                raw.agent_reference_code ??
+                raw.agentRefCode ??
+                raw.referenceCode ??
+                '',
         };
-
+        
         res.json({ success: true, booking });
     } catch (error) {
         console.error('Lookup error:', error);
@@ -579,6 +610,10 @@ router.post('/amend', upload, validateBooking, async (req: Request, res: Respons
             idType: newData.idType,
             termsAccepted:
                 newData.termsAccepted === 'true' || newData.termsAccepted === true,
+        
+            // ✅ NEW
+            agentReferenceCode: newData.agentReferenceCode,
+        
             periodCategory: newData.periodCategory,
             dailyRate: newData.dailyRate ? Number(newData.dailyRate) : undefined,
             estimatedTotal: newData.estimatedTotal

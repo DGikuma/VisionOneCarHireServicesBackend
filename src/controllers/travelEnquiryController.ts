@@ -12,7 +12,7 @@ const BRAND = {
     goldLight: '#F4D77A',
     cream: '#FFF8E7',
     green: '#0B6E4F',
-    logo: 'https://www.visionwanservices.com/assets/images/logo.png',
+    logo: 'https://www.visionwanservices.com/assets/images/visionWan_travels.png',
     site: 'https://visionwanservices.com',
     replyTo: 'visionwanservices@gmail.com',
     phones: {
